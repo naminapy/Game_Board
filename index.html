@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ゲーム制作ボード</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;700&display=swap" rel="stylesheet">
 <style>
 /* ===== テーマ(色)の定義：ここを書き換えると色を変えられるよ ===== */
@@ -61,6 +62,13 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
 .row>input:not([type=checkbox]){flex:1;min-width:120px;width:auto}
 .err{color:#C0392B;font-size:13px;min-height:1em}
 #alert{border:2px solid var(--ac)}
+/* カウントダウンと図（棒グラフ）の見た目 */
+.cd{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.bigbadge{background:var(--ac);color:var(--on);border-radius:var(--r);padding:8px 16px;font-size:32px;font-weight:700;line-height:1.2}
+.bar{display:flex;height:16px;border-radius:99px;overflow:hidden;background:var(--card);border:1px solid var(--bd)}
+.seg{height:100%}
+.crow{display:grid;grid-template-columns:6em 1fr 4.5em;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+.crow span:last-child{text-align:right}
 </style>
 </head>
 <body>
@@ -72,11 +80,15 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
 <div class="chips" id="chips"></div>
 <div class="row" style="padding:0 12px 4px"><button class="pri" id="add">＋ タスクを追加</button><button id="hd"></button></div>
 <section class="box" id="alert" hidden></section>
+<section class="box" id="cd"></section>
 <div class="board" id="board"></div>
+<section class="box"><div class="row"><h3 style="margin:0;flex:1">進み具合</h3><button id="png">PNGで保存</button><button id="pdf">PDFで保存</button></div><div id="charts"></div><span class="sub" id="repMsg"></span></section>
 
 <section class="box" id="feedBox"><h3>更新フィード</h3><ul id="feed"></ul></section>
 
 <section class="box"><details><summary>設定・メンバー・データ</summary>
+  <p class="lb">最終目標・マイルストーン（例：α版提出）</p><div id="msList"></div>
+  <div class="row"><input id="msName" placeholder="例：α版提出"><input id="msDate" type="date"><button id="msAdd">追加</button></div>
   <p class="lb">プロジェクト名</p><div class="row"><input id="pName"><button id="rename">変更</button></div>
   <p class="lb">制作形態（個人にすると担当者まわりが隠れるよ）</p><select id="pMode"></select>
   <label class="sub"><input type="checkbox" id="feedOn"> 更新フィードを表示する</label>
@@ -166,6 +178,7 @@ function migrate(d){
     d.projects.forEach(p => p.tasks.forEach(t => { t.updatedAt = t.updatedAt || 0; t.updatedBy = t.updatedBy || ""; t.deleted = !!t.deleted; }));
     d.v = 2;
   }
+  if(d.v < 3){ d.projects.forEach(p => { p.milestones = p.milestones || []; }); d.v = 3; } // v3：最終目標（マイルストーン）を追加
   return d;
 }
 // 読み込んだJSONがちゃんとした形かを確かめる
@@ -218,7 +231,7 @@ function render(){
   $("cnt").textContent = `(${p.members.length}/${MAX_MEMBERS})`;
   $("mem").innerHTML = p.members.map(m => `<div class="row" style="margin:2px 0">${dot(p,m.id)} ${esc(m.name)} <button data-rm="${m.id}" aria-label="${esc(m.name)}を削除">削除</button></div>`).join("");
   $("me").innerHTML = opts([["","未選択"], ...p.members.map(m => [m.name, m.name])], db.me);
-  renderAlert(); updateNotif();
+  renderAlert(); updateNotif(); renderReport(); renderMs();
   // 個人/チームで表示を切り替える
   $("pMode").innerHTML = opts([["team","チーム"],["solo","個人"]], p.mode || "team");
   $("feedOn").checked = p.feedOn !== false;
@@ -338,6 +351,91 @@ function notifyOnce(){
   notified = true;
   try { new Notification("期限が近いタスクが" + list.length + "件あるよ", {body: list.slice(0,3).map(t => t.title + "（" + t.due + "）").join("\n")}); } catch(e) {}
 }
+
+// ===== 最終目標のカウントダウンと図（グラフ） =====
+const SEG = {todo:"var(--bd)", doing:"var(--sub);opacity:.55", review:"var(--sub)", done:"var(--ac)"};
+const dayText = d => d > 0 ? `あと ${d}日` : d === 0 ? "今日！" : `${-d}日すぎた`;
+// 目標・件数・グラフに必要な数字をまとめて計算する（画面表示と画像の書き出しの両方で使う）
+function repData(){
+  const p = cur(), ts = p.tasks.filter(t => !t.deleted), today = new Date(); today.setHours(0,0,0,0);
+  const cnt = {}; STATUS.forEach(([k]) => cnt[k] = ts.filter(t => t.status === k).length);
+  const ms = (p.milestones || []).slice().sort((a,b) => a.date.localeCompare(b.date));
+  const days = m => Math.round((new Date(m.date + "T00:00:00") - today) / 864e5);
+  const next = ms.find(m => days(m) >= 0) || ms[ms.length - 1]; // いちばん近い未来の目標（なければ最後の目標）
+  return {p, ts, cnt, ms, next, days, n:ts.length, pct: ts.length ? Math.round(cnt.done / ts.length * 100) : 0,
+    left: next ? ts.filter(t => t.status !== "done" && t.due && t.due <= next.date).length : 0,
+    cats: CATS.map(c => [c, ts.filter(t => t.cat === c && t.status === "done").length, ts.filter(t => t.cat === c).length]).filter(r => r[2]),
+    mem: p.mode === "solo" ? [] : p.members.map(m => [m.name, ts.filter(t => t.assignee === m.id && t.status !== "done").length]),
+    open: ts.filter(t => t.status !== "done").sort((a,b) => (a.due || "9").localeCompare(b.due || "9"))};
+}
+// 画面に出すカウントダウンと棒グラフ
+function renderReport(){
+  const R = repData();
+  $("cd").innerHTML = R.next ? `<div class="cd"><div class="bigbadge">${dayText(R.days(R.next))}</div><div><b>${esc(R.next.name)}</b> <span class="sub">${esc(R.next.date)}</span><br><span class="sub">それまでが期限の未完了タスク：${R.left}件</span></div></div>` +
+    (R.ms.length > 1 ? `<div class="meta">${R.ms.filter(m => m !== R.next).map(m => `<span class="tag">${esc(m.name)} ${R.days(m) >= 0 ? "あと" + R.days(m) + "日" : "終了"}</span>`).join("")}</div>` : "")
+    : `<p class="sub">最終目標がまだないよ。設定の「最終目標」で「α版提出」などを決めてね。</p>`;
+  const row = (label, w, right) => `<div class="crow"><span>${esc(label)}</span><div class="bar"><div class="seg" style="width:${w}%;background:var(--ac)"></div></div><span>${right}</span></div>`;
+  const stack = R.n ? STATUS.map(([k]) => `<div class="seg" style="width:${R.cnt[k] / R.n * 100}%;background:${SEG[k]}"></div>`).join("") : "";
+  const mx = Math.max(1, ...R.mem.map(r => r[1]));
+  $("charts").innerHTML = `<p class="lb">全体 ${R.pct}%（完了 ${R.cnt.done}/${R.n}件）</p><div class="bar">${stack}</div>` +
+    `<div class="sub" style="margin-top:4px">${STATUS.map(([k,i,l]) => `${i} ${l} ${R.cnt[k]}`).join("　")}</div>` +
+    `<p class="lb">カテゴリごとの完了</p>${R.cats.map(([c,d,t]) => row(c, d / t * 100, d + "/" + t)).join("") || '<p class="sub">タスクがまだないよ</p>'}` +
+    (R.mem.length ? `<p class="lb">担当者ごとの未完了</p>` + R.mem.map(([m,k]) => row(m, k / mx * 100, k + "件")).join("") : "");
+}
+// 設定欄：目標の一覧・追加・削除
+function renderMs(){
+  $("msList").innerHTML = (cur().milestones || []).map(m => `<div class="row" style="margin:2px 0">${esc(m.name)} <span class="sub">${esc(m.date)}</span> <button data-msrm="${m.id}" aria-label="${esc(m.name)}を削除">削除</button></div>`).join("") || '<p class="sub">まだないよ</p>';
+}
+$("msAdd").onclick = () => {
+  const n = $("msName").value.trim(), d = $("msDate").value; if(!n || !d) return;
+  const p = cur(); (p.milestones = p.milestones || []).push({id:uid(), name:n, date:d}); $("msName").value = ""; commit(`目標「${n}」（${d}）を追加`);
+};
+$("msList").onclick = e => { const id = e.target.dataset.msrm; if(!id) return; const p = cur(); p.milestones = p.milestones.filter(m => m.id !== id); commit("目標を削除"); };
+
+// 画像(PNG)とPDFの書き出し：レポートを<canvas>に絵として描いて、それを保存する
+function drawReport(){
+  const R = repData(), css = getComputedStyle(document.documentElement), v = n => css.getPropertyValue(n).trim();
+  const rows = R.open.slice(0, 30), W = 720, H = Math.max(760, 400 + (R.cats.length + R.mem.length) * 26 + rows.length * 24 + 40);
+  const c = document.createElement("canvas"); c.width = W * 2; c.height = H * 2; // 2倍の大きさで描いて、くっきりさせる
+  const x = c.getContext("2d"); x.scale(2, 2);
+  const font = '"Zen Maru Gothic","Hiragino Sans","Yu Gothic",sans-serif';
+  // 文字を描く（長いときは「…」で省略）
+  const txt = (s, px, X, Y, col, bold, maxW) => { x.font = `${bold ? "700 " : ""}${px}px ${font}`; x.fillStyle = col; let t = String(s); while(maxW && x.measureText(t).width > maxW && t.length > 1) t = t.slice(0, -1); x.fillText(t === String(s) ? t : t + "…", X, Y); };
+  // 角丸の四角を描く
+  const rect = (X, Y, w, h, col) => { x.fillStyle = col; x.beginPath(); x.roundRect(X, Y, Math.max(w, 0), h, h / 2); x.fill(); };
+  x.fillStyle = v("--bg"); x.fillRect(0, 0, W, H);
+  txt(`${R.p.name} 進捗レポート`, 22, 24, 40, v("--tx"), true); txt(ymd(new Date()), 13, 24, 62, v("--sub"));
+  let y = 84;
+  if(R.next){ rect(24, y, 190, 64, v("--ac")); txt(dayText(R.days(R.next)), 30, 40, y + 43, v("--on"), true);
+    txt(R.next.name, 18, 232, y + 26, v("--tx"), true, 460); txt(`${R.next.date}　それまでが期限の未完了：${R.left}件`, 13, 232, y + 50, v("--sub")); }
+  else txt("最終目標は未設定", 16, 24, y + 36, v("--sub"));
+  y += 100;
+  txt(`全体 ${R.pct}%（完了 ${R.cnt.done}/${R.n}件）`, 15, 24, y, v("--tx"), true);
+  x.save(); x.beginPath(); x.roundRect(24, y + 12, 672, 16, 8); x.clip(); x.fillStyle = v("--panel"); x.fillRect(24, y + 12, 672, 16);
+  let X = 24; STATUS.forEach(([k]) => { const w = R.n ? 672 * R.cnt[k] / R.n : 0; x.globalAlpha = k === "doing" ? .55 : 1; x.fillStyle = {todo:v("--bd"), doing:v("--sub"), review:v("--sub"), done:v("--ac")}[k]; x.fillRect(X, y + 12, w, 16); X += w; });
+  x.restore(); x.globalAlpha = 1;
+  txt(STATUS.map(([k,i,l]) => `${i} ${l} ${R.cnt[k]}`).join("　"), 13, 24, y + 50, v("--sub"));
+  y += 84;
+  // 棒グラフの1行ぶん
+  const row = (label, f, right) => { txt(label, 13, 24, y + 12, v("--tx"), false, 90); rect(120, y, 460, 14, v("--panel")); rect(120, y, 460 * f, 14, v("--ac")); txt(right, 13, 600, y + 12, v("--tx")); y += 26; };
+  txt("カテゴリごとの完了", 14, 24, y, v("--sub"), true); y += 16;
+  R.cats.forEach(([n, d, t]) => row(n, d / t, `${d}/${t}`));
+  if(R.mem.length){ y += 10; txt("担当者ごとの未完了", 14, 24, y, v("--sub"), true); y += 16; const mx = Math.max(1, ...R.mem.map(r => r[1])); R.mem.forEach(([n, k]) => row(n, k / mx, `${k}件`)); }
+  y += 14; txt("未完了タスク", 14, 24, y, v("--sub"), true); y += 22;
+  rows.forEach(t => { txt(`${STATUS.find(s => s[0] === t.status)[1]} ${t.title}`, 14, 24, y, v("--tx"), false, 440); txt(`${t.cat}${t.due ? "　〜" + t.due : ""}`, 12, 480, y, v("--sub"), false, 216); y += 24; });
+  if(R.open.length > 30) txt(`ほか ${R.open.length - 30}件`, 12, 24, y, v("--sub"));
+  return {c, W, H};
+}
+const fileName = ext => `${cur().name}_${ymd(new Date())}.${ext}`;
+$("png").onclick = () => {
+  try { drawReport().c.toBlob(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = fileName("png"); a.click(); }); $("repMsg").textContent = ""; }
+  catch(e) { $("repMsg").textContent = "保存できなかったよ"; }
+};
+$("pdf").onclick = () => {
+  try { const {c, W, H} = drawReport(), h = 210 * H / W, pdf = new window.jspdf.jsPDF({unit:"mm", format:[210, h]});
+    pdf.addImage(c.toDataURL("image/png"), "PNG", 0, 0, 210, h); pdf.save(fileName("pdf")); $("repMsg").textContent = ""; }
+  catch(e) { $("repMsg").textContent = "PDFを作れなかったよ（通信が必要）"; }
+};
 
 // 完了タスクの表示/非表示
 $("hd").onclick = () => { hideDone = !hideDone; set("gtm-hidedone", hideDone ? "1" : "0"); render(); };
