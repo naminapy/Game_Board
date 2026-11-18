@@ -79,6 +79,7 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
 </header>
 <div class="chips" id="chips"></div>
 <div class="row" style="padding:0 12px 4px"><button class="pri" id="add">＋ タスクを追加</button><button id="hd"></button></div>
+<section class="box" id="bk" hidden></section>
 <section class="box" id="alert" hidden></section>
 <section class="box" id="cd"></section>
 <div class="board" id="board"></div>
@@ -103,8 +104,9 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
   <div class="row"><input id="newP" placeholder="ゲーム名"><button id="addP">作成</button></div>
   <label class="sub"><input type="checkbox" id="keepM" checked> メンバーを引き継ぐ</label>
   <div class="row" style="margin-top:10px"><button id="delP">このプロジェクトを削除</button><span class="sub" id="delMsg"></span></div>
+  <p class="lb">削除したタスク（ゴミ箱）</p><div id="trash"></div>
   <p class="lb">データのバックアップ（JSON）</p><textarea id="json" rows="4"></textarea>
-  <div class="row"><button id="exp">書き出し</button><button id="imp">読み込み</button><span class="sub" id="msg"></span></div>
+  <div class="row"><button id="exp">書き出し</button><button id="imp">読み込み</button><button id="expF">ファイルで保存</button><label class="btn" style="cursor:pointer">ファイルから読み込む<input id="impF" type="file" accept=".json,application/json" hidden></label><span class="sub" id="msg"></span></div>
 </details></section>
 
 <dialog id="dlg">
@@ -217,8 +219,8 @@ function render(){
   $("board").innerHTML = STATUS.filter(s => !(hideDone && s[0] === "done")).map(([k,icon,label]) => {
     const list = p.tasks.filter(t => !t.deleted && t.status===k && (!filter || t.assignee===filter))
       .sort((a,b) => order[a.pri]-order[b.pri] || (a.due||"9").localeCompare(b.due||"9"));
-    return `<div class="col"><h3><span>${icon} ${label}</span><span>${list.length}</span></h3><div class="list">` +
-      (list.map(t => `<div class="card" data-id="${t.id}"><b>${esc(t.title)}</b>
+    return `<div class="col" data-st="${k}"><h3><span>${icon} ${label}</span><span>${list.length}</span></h3><div class="list">` +
+      (list.map(t => `<div class="card" data-id="${t.id}" draggable="true"><b>${esc(t.title)}</b>
         <div class="meta"><span class="tag">${esc(t.cat)}</span><span class="tag">優先 ${PRI[t.pri]}</span>${solo ? "" : dot(p,t.assignee)}
         ${t.due ? (t.due < today && t.status!=="done" ? `<span class="late">期限切れ ${esc(t.due)}</span>` : `<span>〜${esc(t.due)}</span>`) : ""}</div>
         <div class="mv"><button data-mv="-1" aria-label="左の列へ">◀</button><button data-mv="1" aria-label="右の列へ">▶</button></div></div>`).join("") || `<p class="sub">なし</p>`) + `</div></div>`;
@@ -231,7 +233,7 @@ function render(){
   $("cnt").textContent = `(${p.members.length}/${MAX_MEMBERS})`;
   $("mem").innerHTML = p.members.map(m => `<div class="row" style="margin:2px 0">${dot(p,m.id)} ${esc(m.name)} <button data-rm="${m.id}" aria-label="${esc(m.name)}を削除">削除</button></div>`).join("");
   $("me").innerHTML = opts([["","未選択"], ...p.members.map(m => [m.name, m.name])], db.me);
-  renderAlert(); updateNotif(); renderReport(); renderMs();
+  renderAlert(); updateNotif(); renderReport(); renderMs(); backupNote(); renderTrash();
   // 個人/チームで表示を切り替える
   $("pMode").innerHTML = opts([["team","チーム"],["solo","個人"]], p.mode || "team");
   $("feedOn").checked = p.feedOn !== false;
@@ -436,6 +438,52 @@ $("pdf").onclick = () => {
     pdf.addImage(c.toDataURL("image/png"), "PNG", 0, 0, 210, h); pdf.save(fileName("pdf")); $("repMsg").textContent = ""; }
   catch(e) { $("repMsg").textContent = "PDFを作れなかったよ（通信が必要）"; }
 };
+
+// ===== バックアップ：ファイル保存と、忘れ防止のお知らせ =====
+const BK_DAYS = 7; // 何日バックアップしてないとお知らせするか
+function backupNote(){
+  const last = Number(get("gtm-lastbackup") || 0), d = last ? Math.floor((Date.now() - last) / 864e5) : null;
+  const hasData = db.projects.some(p => p.tasks.length);
+  $("bk").hidden = !hasData || (d !== null && d < BK_DAYS);
+  $("bk").innerHTML = `<span>${d === null ? "まだバックアップしてないよ" : `最後のバックアップから${d}日たってるよ`}。ブラウザのデータが消えても戻せるように、ファイルで保存しておこう。</span> <button id="bkNow" class="pri">今すぐ保存</button>`;
+}
+// データをJSONファイルとしてダウンロードする
+function saveBackupFile(){
+  const b = new Blob([JSON.stringify(db, null, 1)], {type:"application/json"}), a = document.createElement("a");
+  a.href = URL.createObjectURL(b); a.download = `game-board-backup_${ymd(new Date())}.json`; a.click();
+  set("gtm-lastbackup", String(Date.now())); backupNote();
+}
+$("expF").onclick = saveBackupFile;
+$("bk").onclick = e => { if(e.target.id === "bkNow") saveBackupFile(); };
+// 選んだファイルの中身を、読み込み欄に入れて読み込む
+$("impF").onchange = e => {
+  const f = e.target.files[0]; if(!f) return;
+  f.text().then(t => { $("json").value = t; $("imp").click(); }).catch(() => { $("msg").textContent = "ファイルを読めなかったよ"; });
+  e.target.value = "";
+};
+
+// ===== 削除したタスクのゴミ箱（元に戻せる） =====
+function renderTrash(){
+  $("trash").innerHTML = cur().tasks.filter(t => t.deleted).map(t => `<div class="row" style="margin:2px 0">${esc(t.title)} <button data-undel="${t.id}">戻す</button></div>`).join("") || '<p class="sub">ないよ</p>';
+}
+$("trash").onclick = e => {
+  const id = e.target.dataset.undel; if(!id) return;
+  const t = cur().tasks.find(x => x.id === id); t.deleted = false; t.updatedAt = Date.now(); t.updatedBy = db.me || "";
+  commit(`「${t.title}」を元に戻した`);
+};
+
+// ===== ドラッグ＆ドロップでカードを別の列へ移動（PC用。スマホは ◀ ▶ ボタン） =====
+let dragId = null;
+$("board").ondragstart = e => { const c = e.target.closest(".card"); if(c){ dragId = c.dataset.id; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragId); } };
+$("board").ondragover = e => { if(dragId && e.target.closest(".col")) e.preventDefault(); }; // 「ここに置いていいよ」の合図
+$("board").ondrop = e => {
+  const col = e.target.closest(".col"); if(!dragId || !col) return; e.preventDefault();
+  const t = cur().tasks.find(x => x.id === dragId), st = col.dataset.st; dragId = null;
+  if(!t || t.status === st) return;
+  t.status = st; t.updatedAt = Date.now(); t.updatedBy = db.me || "";
+  commit(`「${t.title}」を ${STATUS.find(s => s[0] === st)[2]} に移動`);
+};
+$("board").ondragend = () => { dragId = null; };
 
 // 完了タスクの表示/非表示
 $("hd").onclick = () => { hideDone = !hideDone; set("gtm-hidedone", hideDone ? "1" : "0"); render(); };
