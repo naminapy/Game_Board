@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ゲーム制作ボード</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#3FBF7F">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -67,7 +71,12 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
 .bigbadge{background:var(--ac);color:var(--on);border-radius:var(--r);padding:8px 16px;font-size:32px;font-weight:700;line-height:1.2}
 .bar{display:flex;height:16px;border-radius:99px;overflow:hidden;background:var(--card);border:1px solid var(--bd)}
 .seg{height:100%}
-.crow{display:grid;grid-template-columns:6em 1fr 4.5em;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+.crow{display:grid;grid-template-columns:6em 1fr 6.5em;gap:8px;align-items:center;font-size:13px;margin:6px 0}
+/* 項目ごとの枠（見出しと薄い線で、どこからどこまでか分かるようにする） */
+.sec{background:var(--card);border:1px solid var(--bd);border-radius:calc(var(--r) - 4px);padding:10px 12px;margin-top:8px}
+.sec h4{margin:0 0 6px;padding-bottom:6px;border-bottom:1px solid var(--bd);font-size:14px}
+.sec .bar{background:var(--panel)}
+.legend{margin-top:4px}
 .crow span:last-child{text-align:right}
 /* ガント風スケジュール（横に日付、縦にタスク） */
 .gantt{overflow-x:auto}
@@ -84,8 +93,11 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
 .tabs{display:flex;gap:6px;padding:0 12px 8px}
 .tabs button{flex:1;border-radius:99px}
 .tabs button.on{background:var(--ac);color:var(--on);border-color:var(--ac);font-weight:700}
-#vGantt,#vStats{display:none}
-body[data-tab=gantt] #vGantt,body[data-tab=stats] #vStats{display:block}
+#vGantt,#vStats,#vSet{display:none}
+body[data-tab=gantt] #vGantt,body[data-tab=stats] #vStats,body[data-tab=set] #vSet{display:block}
+body[data-tab=set] :is(#chips,#tools,#board,#feedBox,#cd){display:none}
+/* 設定の中の小タブ（一般 / 編集 / データ） */
+.pane{display:none}.pane.on{display:block}
 body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#tools,#board){display:none}
 .gm,.gtd{position:absolute;top:0;bottom:0;width:0;pointer-events:none;z-index:1}
 .gm{border-left:2px dashed var(--ac)}.gtd{border-left:2px solid var(--tx);opacity:.5}
@@ -98,7 +110,7 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
   <select id="thm" aria-label="テーマ"></select>
   <a id="spec" class="btn" target="_blank" rel="noopener" hidden>仕様書を開く</a>
 </header>
-<nav class="tabs" id="tabs"><button data-tab="board">ボード</button><button data-tab="gantt">スケジュール</button><button data-tab="stats">進み具合</button></nav>
+<nav class="tabs" id="tabs"><button data-tab="board">ボード</button><button data-tab="gantt">スケジュール</button><button data-tab="stats">進み具合</button><button data-tab="set">設定</button></nav>
 <div class="chips" id="chips"></div>
 <div class="row" id="tools" style="padding:0 12px 4px"><button class="pri" id="add">＋ タスクを追加</button><button id="hd"></button></div>
 <section class="box" id="bk" hidden></section>
@@ -110,33 +122,64 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
 
 <section class="box" id="feedBox"><h3>更新フィード</h3><ul id="feed"></ul></section>
 
-<section class="box"><details><summary>設定・メンバー・データ</summary>
-  <p class="lb">最終目標・マイルストーン（例：α版提出）</p><div id="msList"></div>
-  <div class="row"><input id="msName" placeholder="例：α版提出"><input id="msDate" type="date"><button id="msAdd">追加</button></div>
-  <p class="lb">プロジェクト名</p><div class="row"><input id="pName"><button id="rename">変更</button></div>
-  <p class="lb">制作形態（個人にすると担当者まわりが隠れるよ）</p><select id="pMode"></select>
-  <label class="sub"><input type="checkbox" id="feedOn"> 更新フィードを表示する</label>
-  <p class="lb">仕様書のURL（Googleスプレッドシートなど）</p><input id="specUrl" placeholder="https://docs.google.com/spreadsheets/...">
-  <p class="lb">このプロジェクトの標準テーマ</p><select id="pTheme"></select>
-  <div class="teamOnly"><p class="lb">あなたの名前（更新フィードに表示）</p><select id="me"></select></div>
-  <p class="lb">デスクトップ通知</p>
-  <div class="row"><button id="notif">通知を許可する</button><span class="sub" id="notifSt"></span></div>
-  <div class="teamOnly"><p class="lb">メンバー <span id="cnt"></span></p><div id="mem"></div>
-  <div class="row"><input id="newM" placeholder="名前"><button id="addM">追加</button></div></div>
-  <p class="lb">テンプレート（今のタスクの雛形を保存）</p>
-  <div class="row"><input id="tplName" placeholder="テンプレート名（例：アクションゲーム）"><button id="tplSave">保存</button></div><div id="tplList"></div>
-  <p class="lb">新規プロジェクト</p>
-  <div class="row"><input id="newP" placeholder="ゲーム名"><button id="addP">作成</button></div>
-  <label class="sub"><input type="checkbox" id="keepM" checked> メンバーを引き継ぐ</label>
-  <div class="row" style="margin-top:10px"><button id="delP">このプロジェクトを削除</button><span class="sub" id="delMsg"></span></div>
-  <p class="lb">削除したタスク（ゴミ箱）</p><div id="trash"></div>
-  <p class="lb">データのバックアップ（JSON）</p><textarea id="json" rows="4"></textarea>
-  <div class="row"><button id="exp">書き出し</button><button id="imp">読み込み</button><button id="expF">ファイルで保存</button><label class="btn" style="cursor:pointer">ファイルから読み込む<input id="impF" type="file" accept=".json,application/json" hidden></label><span class="sub" id="msg"></span></div>
-</details></section>
+<section class="box" id="vSet">
+  <nav class="tabs" id="stabs" style="padding:0 0 8px"><button data-stab="gen">一般</button><button data-stab="edit">編集</button><button data-stab="data">データ</button></nav>
+
+  <div class="pane" data-pane="gen">
+    <div class="sec"><h4>プロジェクト</h4>
+      <p class="lb">プロジェクト名</p><div class="row"><input id="pName"><button id="rename">変更</button></div>
+      <p class="lb">制作形態（個人にすると担当者まわりが隠れるよ）</p><select id="pMode"></select>
+      <p class="lb">このプロジェクトの標準テーマ</p><select id="pTheme"></select>
+      <p class="lb">仕様書のURL（Googleスプレッドシートなど）</p><input id="specUrl" placeholder="https://docs.google.com/spreadsheets/..."><span class="sub" id="specMsg"></span>
+    </div>
+    <div class="sec"><h4>表示と通知</h4>
+      <label class="sub"><input type="checkbox" id="feedOn"> 更新フィードを表示する</label>
+      <div class="teamOnly"><p class="lb">あなたの名前（更新フィードに表示）</p><select id="me"></select></div>
+      <p class="lb">デスクトップ通知</p>
+      <div class="row"><button id="notif">通知を許可する</button><span class="sub" id="notifSt"></span></div>
+    </div>
+    <div class="sec"><h4>プロジェクトの追加と削除</h4>
+      <p class="lb">新規プロジェクト</p>
+      <div class="row"><input id="newP" placeholder="ゲーム名"><button id="addP">作成</button></div>
+      <label class="sub"><input type="checkbox" id="keepM" checked> メンバーを引き継ぐ</label>
+      <div class="row" style="margin-top:10px"><button id="delP">このプロジェクトを削除</button><span class="sub" id="delMsg"></span></div>
+    </div>
+  </div>
+
+  <div class="pane" data-pane="edit">
+    <div class="sec"><h4>最終目標・マイルストーン</h4><div id="msList"></div>
+      <div class="row"><input id="msName" placeholder="例：α版提出"><input id="msDate" type="date"><button id="msAdd">追加</button></div>
+    </div>
+    <div class="sec"><h4>カテゴリ</h4><p class="sub">「,」で区切って入力（最大12個）</p>
+      <div class="row"><input id="catIn"><button id="catSave">保存</button></div>
+    </div>
+    <div class="sec"><h4>工程（フェーズ）</h4><p class="sub">「,」で区切って入力（最大12個）</p>
+      <div class="row"><input id="phIn"><button id="phSave">保存</button></div>
+    </div>
+    <div class="sec teamOnly"><h4>メンバー <span id="cnt"></span></h4><div id="mem"></div>
+      <div class="row"><input id="newM" placeholder="名前"><button id="addM">追加</button></div>
+    </div>
+  </div>
+
+  <div class="pane" data-pane="data">
+    <div class="sec"><h4>バックアップ</h4>
+      <div class="row"><button id="expF">ファイルで保存</button><label class="btn" style="cursor:pointer">ファイルから読み込む<input id="impF" type="file" accept=".json,application/json" hidden></label></div>
+      <p class="lb">テキストで受け渡す（コピー＆貼り付け）</p><textarea id="json" rows="4"></textarea>
+      <div class="row"><button id="exp">書き出し</button><button id="imp">読み込み</button><span class="sub" id="msg"></span></div>
+    </div>
+    <div class="sec"><h4>テンプレート</h4><p class="sub">今のタスクの雛形を保存して、新しいプロジェクトに使い回せる</p>
+      <div class="row"><input id="tplName" placeholder="テンプレート名（例：アクションゲーム）"><button id="tplSave">保存</button></div>
+      <div id="tplList"></div><span class="sub" id="tplMsg"></span>
+    </div>
+    <div class="sec"><h4>ゴミ箱（削除したタスク）</h4><div id="trash"></div></div>
+  </div>
+</section>
 
 <dialog id="dlg">
   <p class="lb">タスク名</p><input id="fTitle">
   <p class="lb">カテゴリ</p><select id="fCat"></select>
+  <p class="lb">工程（フェーズ）</p><select id="fPhase"></select>
+  <p class="lb">見積時間（時間）</p><input id="fEst" type="number" min="0" step="0.5">
   <p class="lb">優先度</p><select id="fPri"></select>
   <p class="lb">ステータス</p><select id="fSt"></select>
   <div id="whoBox"><p class="lb">担当者</p><select id="fWho"></select></div>
@@ -247,7 +290,7 @@ function render(){
       .sort((a,b) => order[a.pri]-order[b.pri] || (a.due||"9").localeCompare(b.due||"9"));
     return `<div class="col" data-st="${k}"><h3><span>${icon} ${label}</span><span>${list.length}</span></h3><div class="list">` +
       (list.map(t => `<div class="card" data-id="${t.id}" draggable="true"><b>${esc(t.title)}</b>
-        <div class="meta"><span class="tag">${esc(t.cat)}</span><span class="tag">優先 ${PRI[t.pri]}</span>${solo ? "" : dot(p,t.assignee)}
+        <div class="meta"><span class="tag">${esc(t.cat)}</span><span class="tag">優先 ${PRI[t.pri]}</span>${t.phase ? `<span class="tag">${esc(t.phase)}</span>` : ""}${t.est ? `<span class="tag">${t.est}h</span>` : ""}${solo ? "" : dot(p,t.assignee)}
         ${t.due ? (t.due < today && t.status!=="done" ? `<span class="late">期限切れ ${esc(t.due)}</span>` : `<span>〜${esc(t.due)}</span>`) : ""}</div>
         <div class="mv"><button data-mv="-1" aria-label="左の列へ">◀</button><button data-mv="1" aria-label="右の列へ">▶</button></div></div>`).join("") || `<p class="sub">なし</p>`) + `</div></div>`;
   }).join("");
@@ -259,7 +302,7 @@ function render(){
   $("cnt").textContent = `(${p.members.length}/${MAX_MEMBERS})`;
   $("mem").innerHTML = p.members.map(m => `<div class="row" style="margin:2px 0">${dot(p,m.id)} ${esc(m.name)} <button data-rm="${m.id}" aria-label="${esc(m.name)}を削除">削除</button></div>`).join("");
   $("me").innerHTML = opts([["","未選択"], ...p.members.map(m => [m.name, m.name])], db.me);
-  renderAlert(); updateNotif(); renderReport(); renderMs(); backupNote(); renderTrash(); renderGantt(); renderTpl(); applyTab();
+  renderAlert(); updateNotif(); renderReport(); renderMs(); backupNote(); renderTrash(); renderGantt(); renderTpl(); applyTab(); applyStab();
   // 個人/チームで表示を切り替える
   $("pMode").innerHTML = opts([["team","チーム"],["solo","個人"]], p.mode || "team");
   $("feedOn").checked = p.feedOn !== false;
@@ -267,6 +310,7 @@ function render(){
   $("chips").style.display = solo ? "none" : "";
   $("whoBox").hidden = solo;
   $("pName").value = p.name;
+  $("catIn").value = catsOf(p).join(", "); $("phIn").value = phasesOf(p).join(", ");
   $("delP").disabled = db.projects.length < 2; // 最後の1つは消せない
   delArm = false; $("delMsg").textContent = "";
   $("hd").textContent = hideDone ? `完了を表示する（${p.tasks.filter(t => !t.deleted && t.status === "done").length}件）` : "完了を隠す";
@@ -276,8 +320,8 @@ function render(){
 // ===== タスクの編集ダイアログ =====
 function openEdit(id){
   const p = cur();
-  editing = p.tasks.find(t => t.id === id) || {id:uid(), title:"", cat:CATS[1], pri:"mid", status:"todo", assignee:"", due:"", memo:"", isNew:true};
-  $("fTitle").value = editing.title; $("fCat").innerHTML = opts(CATS.map(c => [c,c]), editing.cat);
+  editing = p.tasks.find(t => t.id === id) || {id:uid(), title:"", cat:catsOf(p)[1] || catsOf(p)[0], pri:"mid", status:"todo", assignee:"", due:"", memo:"", isNew:true};
+  $("fTitle").value = editing.title; $("fPhase").innerHTML = opts([["","なし"], ...[...new Set([...phasesOf(p), editing.phase || ""])].filter(Boolean).map(c => [c,c])], editing.phase || ""); $("fEst").value = editing.est || ""; $("fCat").innerHTML = opts([...new Set([...catsOf(p), editing.cat])].map(c => [c,c]), editing.cat);
   $("fPri").innerHTML = opts(Object.entries(PRI), editing.pri);
   $("fSt").innerHTML = opts(STATUS.map(s => [s[0], s[1]+" "+s[2]]), editing.status);
   $("fWho").innerHTML = opts([["","未定"], ...p.members.map(m => [m.id, m.name])], editing.assignee);
@@ -290,7 +334,7 @@ $("save").onclick = () => {
   const sd = $("fStart").value, dd = $("fDue").value;
   if(sd && dd && sd > dd){ $("err").textContent = "開始日は期限より前にしてね"; return; }
   const p = cur(), t = editing, oldSt = t.status;
-  Object.assign(t, {title, cat:$("fCat").value, pri:$("fPri").value, status:$("fSt").value, assignee:$("fWho").value, start:$("fStart").value, due:$("fDue").value, memo:$("fMemo").value, updatedAt:Date.now(), updatedBy:db.me || ""});
+  Object.assign(t, {title, cat:$("fCat").value, pri:$("fPri").value, status:$("fSt").value, assignee:$("fWho").value, phase:$("fPhase").value, est:Number($("fEst").value) || 0, start:$("fStart").value, due:$("fDue").value, memo:$("fMemo").value, updatedAt:Date.now(), updatedBy:db.me || ""});
   let msg = `「${title}」を編集`;
   if(t.isNew){ delete t.isNew; p.tasks.push(t); msg = `「${title}」を追加`; }
   else if(oldSt !== t.status) msg = `「${title}」を ${STATUS.find(s=>s[0]===t.status)[2]} にした`;
@@ -319,7 +363,7 @@ $("thm").onchange = e => { set("gtm-theme", e.target.value); render(); };
 $("pTheme").onchange = e => { cur().theme = e.target.value; set("gtm-theme", ""); commit(`標準テーマを「${THEMES[e.target.value]}」にした`); };
 $("specUrl").onchange = e => {
   const u = e.target.value.trim(); // 安全のため https:// のリンクだけ許可する
-  if(u && !/^https:\/\//i.test(u)){ e.target.value = cur().specUrl || ""; $("msg").textContent = "仕様書のURLは https:// から始まるものだけ使えるよ"; return; }
+  if(u && !/^https:\/\//i.test(u)){ e.target.value = cur().specUrl || ""; $("specMsg").textContent = "仕様書のURLは https:// から始まるものだけ使えるよ"; return; }
   cur().specUrl = u; commit("仕様書のリンクを更新");
 };
 $("me").onchange = e => { db.me = e.target.value; save(); render(); };
@@ -383,6 +427,10 @@ function notifyOnce(){
 }
 
 // ===== 最終目標のカウントダウンと図（グラフ） =====
+// カテゴリと工程（フェーズ）：プロジェクトごとに変えられる。未設定のときは標準のものを使う
+const PHASES = ["企画","プロトタイプ","本制作","デバッグ","リリース"];
+const catsOf = p => (p.cats && p.cats.length ? p.cats : CATS);
+const phasesOf = p => (p.phases && p.phases.length ? p.phases : PHASES);
 const SEG = {todo:"var(--bd)", doing:"var(--sub);opacity:.55", review:"var(--sub)", done:"var(--ac)"};
 const dayText = d => d > 0 ? `あと ${d}日` : d === 0 ? "今日！" : `${-d}日すぎた`;
 // 目標・件数・グラフに必要な数字をまとめて計算する（画面表示と画像の書き出しの両方で使う）
@@ -394,7 +442,9 @@ function repData(){
   const next = ms.find(m => days(m) >= 0) || ms[ms.length - 1]; // いちばん近い未来の目標（なければ最後の目標）
   return {p, ts, cnt, ms, next, days, n:ts.length, pct: ts.length ? Math.round(cnt.done / ts.length * 100) : 0,
     left: next ? ts.filter(t => t.status !== "done" && t.due && t.due <= next.date).length : 0,
-    cats: CATS.map(c => [c, ts.filter(t => t.cat === c && t.status === "done").length, ts.filter(t => t.cat === c).length]).filter(r => r[2]),
+    cats: [...new Set([...catsOf(p), ...ts.map(t => t.cat)])].map(c => [c, ts.filter(t => t.cat === c && t.status === "done").length, ts.filter(t => t.cat === c).length]).filter(r => r[2]),
+    phases: [...new Set([...phasesOf(p), ...ts.map(t => t.phase).filter(Boolean)])].map(c => [c, ts.filter(t => t.phase === c && t.status === "done").length, ts.filter(t => t.phase === c).length]).filter(r => r[2]),
+    estAll: ts.reduce((s, t) => s + (t.est || 0), 0), estDone: ts.filter(t => t.status === "done").reduce((s, t) => s + (t.est || 0), 0),
     mem: p.mode === "solo" ? [] : p.members.map(m => [m.name, ts.filter(t => t.assignee === m.id && t.status !== "done").length]),
     open: ts.filter(t => t.status !== "done").sort((a,b) => (a.due || "9").localeCompare(b.due || "9"))};
 }
@@ -404,13 +454,20 @@ function renderReport(){
   $("cd").innerHTML = R.next ? `<div class="cd"><div class="bigbadge">${dayText(R.days(R.next))}</div><div><b>${esc(R.next.name)}</b> <span class="sub">${esc(R.next.date)}</span><br><span class="sub">それまでが期限の未完了タスク：${R.left}件</span></div></div>` +
     (R.ms.length > 1 ? `<div class="meta">${R.ms.filter(m => m !== R.next).map(m => `<span class="tag">${esc(m.name)} ${R.days(m) >= 0 ? "あと" + R.days(m) + "日" : "終了"}</span>`).join("")}</div>` : "")
     : `<p class="sub">最終目標がまだないよ。設定の「最終目標」で「α版提出」などを決めてね。</p>`;
-  const row = (label, w, right) => `<div class="crow"><span>${esc(label)}</span><div class="bar"><div class="seg" style="width:${w}%;background:var(--ac)"></div></div><span>${right}</span></div>`;
+  // 1行ぶんの棒グラフ：左に名前、真ん中に棒、右に数字（どの項目も同じ並びにそろえる）
+  const rowB = (label, inner, right) => `<div class="crow"><span>${esc(label)}</span><div class="bar">${inner}</div><span>${right}</span></div>`;
+  const row = (label, w, right) => rowB(label, `<div class="seg" style="width:${w}%;background:var(--ac)"></div>`, right);
+  // 項目ごとの枠（見出し＋中身）
+  const sec = (title, body) => `<div class="sec"><h4>${title}</h4>${body}</div>`;
   const stack = R.n ? STATUS.map(([k]) => `<div class="seg" style="width:${R.cnt[k] / R.n * 100}%;background:${SEG[k]}"></div>`).join("") : "";
   const mx = Math.max(1, ...R.mem.map(r => r[1]));
-  $("charts").innerHTML = `<p class="lb">全体 ${R.pct}%（完了 ${R.cnt.done}/${R.n}件）</p><div class="bar">${stack}</div>` +
-    `<div class="sub" style="margin-top:4px">${STATUS.map(([k,i,l]) => `${i} ${l} ${R.cnt[k]}`).join("　")}</div>` +
-    `<p class="lb">カテゴリごとの完了</p>${R.cats.map(([c,d,t]) => row(c, d / t * 100, d + "/" + t)).join("") || '<p class="sub">タスクがまだないよ</p>'}` +
-    (R.mem.length ? `<p class="lb">担当者ごとの未完了</p>` + R.mem.map(([m,k]) => row(m, k / mx * 100, k + "件")).join("") : "");
+  $("charts").innerHTML =
+    sec(`全体（完了 ${R.cnt.done}/${R.n}件）`, row("完了率", R.pct, R.pct + "%") + rowB("内訳", stack, R.n + "件") +
+      `<div class="sub legend">${STATUS.map(([k,i,l]) => `${i} ${l} ${R.cnt[k]}`).join("　")}</div>`) +
+    (R.estAll ? sec("見積時間", row("完了", R.estDone / R.estAll * 100, `${R.estDone}/${R.estAll}h`)) : "") +
+    (R.phases.length ? sec("工程ごとの完了", R.phases.map(([c,d,t]) => row(c, d / t * 100, d + "/" + t)).join("")) : "") +
+    sec("カテゴリごとの完了", R.cats.map(([c,d,t]) => row(c, d / t * 100, d + "/" + t)).join("") || '<p class="sub">タスクがまだないよ</p>') +
+    (R.mem.length ? sec("担当者ごとの未完了", R.mem.map(([m,k]) => row(m, k / mx * 100, k + "件")).join("")) : "");
 }
 // 設定欄：目標の一覧・追加・削除
 function renderMs(){
@@ -467,7 +524,20 @@ $("pdf").onclick = () => {
   catch(e) { $("repMsg").textContent = "PDFを作れなかったよ（通信が必要）"; }
 };
 
-// ===== タブの切り替え（ボード / スケジュール / 進み具合） =====
+// ===== カテゴリと工程の編集（カンマ区切りで入力） =====
+const parseList = s => [...new Set(s.split(/[,、，]/).map(x => x.trim()).filter(Boolean))].slice(0, 12); // 最大12個
+$("catSave").onclick = () => { const l = parseList($("catIn").value); if(!l.length) return; cur().cats = l; commit("カテゴリを変更"); };
+$("phSave").onclick = () => { const l = parseList($("phIn").value); if(!l.length) return; cur().phases = l; commit("工程を変更"); };
+
+// ===== 設定の中の小タブ（一般 / 編集 / データ） =====
+let stab = get("gtm-stab") || "gen"; // 最後に見た小タブを覚えておく
+function applyStab(){
+  document.querySelectorAll("#stabs button").forEach(b => b.classList.toggle("on", b.dataset.stab === stab));
+  document.querySelectorAll(".pane").forEach(p => p.classList.toggle("on", p.dataset.pane === stab));
+}
+$("stabs").onclick = e => { const b = e.target.closest("[data-stab]"); if(!b) return; stab = b.dataset.stab; set("gtm-stab", stab); applyStab(); };
+
+// ===== タブの切り替え（ボード / スケジュール / 進み具合 / 設定） =====
 let tab = get("gtm-tab") || "board"; // 最後に見たタブをブラウザが覚えてくれる
 function applyTab(){
   document.body.dataset.tab = tab; // CSSがこの値で表示する場所を切り替える
@@ -520,7 +590,7 @@ $("tplList").onclick = e => {
   if(del){ db.templates = db.templates.filter(t => t.id !== del); save(); render(); return; }
   if(!use) return;
   const name = $("newP").value.trim();
-  if(!name){ $("msg").textContent = "下の「新規プロジェクト」にゲーム名を入れてから押してね"; return; }
+  if(!name){ $("tplMsg").textContent = "「一般」タブの「新規プロジェクト」にゲーム名を入れてから押してね"; return; }
   const tp = db.templates.find(t => t.id === use);
   const p = {id:uid(), name, theme:tp.theme, specUrl:"", members:[], milestones:[], feed:[],
     tasks: tp.tasks.map(t => ({id:uid(), ...t, status:"todo", assignee:"", due:"", start:"", updatedAt:Date.now(), updatedBy:db.me || "", deleted:false}))};
@@ -610,6 +680,8 @@ $("notif").onclick = () => {
 };
 
 load(); render(); notifyOnce();
+// アプリとしてインストールできるように、オフライン用の仕組みを登録する（http/https のときだけ）
+if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
 </html>
