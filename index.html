@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ゲーム制作ボード</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* ===== テーマ(色)の定義：ここを書き換えると色を変えられるよ ===== */
+:root{--bg:#E8F7EE;--panel:#D5EFDF;--card:#fff;--tx:#1E4D36;--sub:#4E7A63;--ac:#3FBF7F;--on:#0F3320;--bd:#B7DEC6;--r:16px;--ff:"Zen Maru Gothic",system-ui,sans-serif;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+[data-theme=forest]{--bg:#26352A;--panel:#2F4033;--card:#3A4E3E;--tx:#EAF3DE;--sub:#B5C8AE;--ac:#A8D672;--on:#1B2A1E;--bd:#4C6450}
+[data-theme=retro]{--bg:#1F1B3A;--panel:#28234A;--card:#2D2852;--tx:#EDEBFF;--sub:#B7B1E6;--ac:#7CFFB2;--on:#12301F;--bd:#5B54A0;--r:0px;--ff:ui-monospace,Menlo,monospace}
+[data-theme=night]{--bg:#2A2D38;--panel:#323644;--card:#3B4050;--tx:#E3E6EF;--sub:#A9AFC2;--ac:#8FB8E8;--on:#14233A;--bd:#4A5066}
+[data-theme=cream]{--bg:#F6F1E4;--panel:#EBE3CF;--card:#FFFDF7;--tx:#3B3A33;--sub:#6B6757;--ac:#D8A24A;--on:#3A2A0A;--bd:#D9CFB4}
+[data-theme=mist]{--bg:#E9F0F6;--panel:#D9E4EE;--card:#FFFFFF;--tx:#263445;--sub:#5A6B7D;--ac:#5B9BD5;--on:#0E2238;--bd:#BCCDDD}
+[data-theme=peach]{--bg:#FBEDE6;--panel:#F3DCD0;--card:#FFF9F6;--tx:#4A2F2A;--sub:#8A6258;--ac:#F08A6C;--on:#3A1208;--bd:#E6C5B6}
+[data-theme=lavender]{--bg:#EFEAF7;--panel:#E1D9F0;--card:#FFFFFF;--tx:#33284D;--sub:#6A5E8A;--ac:#9B83D6;--on:#1E1238;--bd:#CDC2E5}
+[data-theme=charcoal]{--bg:#22262B;--panel:#2B3036;--card:#343A41;--tx:#E6E8EA;--sub:#A5ABB2;--ac:#7FD1C7;--on:#0E2A27;--bd:#444B53}
+/* ===== 共通の見た目 ===== */
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:var(--ff);line-height:1.5}
+header,.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+header{padding:12px}
+select,input,textarea,button,.btn{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:calc(var(--r)/2);padding:8px 10px;min-height:40px;text-decoration:none}
+button.pri{background:var(--ac);color:var(--on);border-color:var(--ac);font-weight:700}
+:focus-visible{outline:3px solid var(--ac);outline-offset:2px}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:0 12px 8px}
+.chip{border-radius:99px;white-space:nowrap}
+.chip.on{background:var(--ac);color:var(--on);border-color:var(--ac)}
+.board{display:flex;gap:10px;overflow-x:auto;padding:8px 12px 12px;scroll-snap-type:x mandatory}
+.col{flex:0 0 80%;max-width:300px;min-width:240px;background:var(--panel);border-radius:var(--r);padding:10px;scroll-snap-align:start;display:flex;flex-direction:column;max-height:min(75vh,640px)}
+/* カードが増えても列の中だけで縦スクロールする（列の見出しは固定） */
+.list{overflow-y:auto;flex:1;padding-right:2px;padding-bottom:18px;
+  /* スクロールバーは細く・薄くして、マウスを乗せた時だけ濃くする */
+  scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--sub) 35%,transparent) transparent;
+  /* 下端を少しフェードさせて「まだ下に続くよ」を伝える */
+  -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 18px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 18px),transparent)}
+.list:hover{scrollbar-color:var(--sub) transparent}
+/* 真ん中のボード（横スクロール）と担当者ボタンの列も、同じように細く薄くする */
+.board,.chips{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--sub) 35%,transparent) transparent}
+.board:hover,.chips:hover{scrollbar-color:var(--sub) transparent}
+@media(min-width:900px){.col{flex:1 1 0;max-width:none}}
+.col h3{margin:0 0 8px;font-size:15px;display:flex;justify-content:space-between}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:calc(var(--r) - 4px);padding:10px;margin-bottom:8px;cursor:pointer}
+.meta{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0;font-size:12px;color:var(--sub);align-items:center}
+.tag{border:1px solid var(--bd);border-radius:99px;padding:1px 8px}
+.dot{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;color:#222;font-size:12px;font-weight:700}
+.late{background:#F7C1C1;color:#501313;border-radius:99px;padding:1px 8px;font-weight:700}
+.mv{display:flex;justify-content:space-between}
+.mv button{min-height:32px;padding:2px 14px}
+.box{margin:0 12px 12px;background:var(--panel);border-radius:var(--r);padding:12px}
+.box h3{margin:0 0 6px;font-size:15px}
+.lb{margin:10px 0 2px;font-size:13px;color:var(--sub)}
+.sub{color:var(--sub);font-size:13px}
+ul{margin:0;padding:0;list-style:none}
+li{padding:4px 0;border-bottom:1px solid var(--bd);font-size:14px}
+dialog{background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:var(--r);width:min(92vw,420px);padding:14px}
+dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box input:not([type=checkbox]),.box select{width:100%}
+.row>input:not([type=checkbox]){flex:1;min-width:120px;width:auto}
+.err{color:#C0392B;font-size:13px;min-height:1em}
+#alert{border:2px solid var(--ac)}
+</style>
+</head>
+<body>
+<header>
+  <select id="prj" aria-label="プロジェクト"></select>
+  <select id="thm" aria-label="テーマ"></select>
+  <a id="spec" class="btn" target="_blank" rel="noopener" hidden>仕様書を開く</a>
+</header>
+<div class="chips" id="chips"></div>
+<div class="row" style="padding:0 12px 4px"><button class="pri" id="add">＋ タスクを追加</button><button id="hd"></button></div>
+<section class="box" id="alert" hidden></section>
+<div class="board" id="board"></div>
+
+<section class="box" id="feedBox"><h3>更新フィード</h3><ul id="feed"></ul></section>
+
+<section class="box"><details><summary>設定・メンバー・データ</summary>
+  <p class="lb">プロジェクト名</p><div class="row"><input id="pName"><button id="rename">変更</button></div>
+  <p class="lb">制作形態（個人にすると担当者まわりが隠れるよ）</p><select id="pMode"></select>
+  <label class="sub"><input type="checkbox" id="feedOn"> 更新フィードを表示する</label>
+  <p class="lb">仕様書のURL（Googleスプレッドシートなど）</p><input id="specUrl" placeholder="https://docs.google.com/spreadsheets/...">
+  <p class="lb">このプロジェクトの標準テーマ</p><select id="pTheme"></select>
+  <div class="teamOnly"><p class="lb">あなたの名前（更新フィードに表示）</p><select id="me"></select></div>
+  <p class="lb">デスクトップ通知</p>
+  <div class="row"><button id="notif">通知を許可する</button><span class="sub" id="notifSt"></span></div>
+  <div class="teamOnly"><p class="lb">メンバー <span id="cnt"></span></p><div id="mem"></div>
+  <div class="row"><input id="newM" placeholder="名前"><button id="addM">追加</button></div></div>
+  <p class="lb">新規プロジェクト</p>
+  <div class="row"><input id="newP" placeholder="ゲーム名"><button id="addP">作成</button></div>
+  <label class="sub"><input type="checkbox" id="keepM" checked> メンバーを引き継ぐ</label>
+  <div class="row" style="margin-top:10px"><button id="delP">このプロジェクトを削除</button><span class="sub" id="delMsg"></span></div>
+  <p class="lb">データのバックアップ（JSON）</p><textarea id="json" rows="4"></textarea>
+  <div class="row"><button id="exp">書き出し</button><button id="imp">読み込み</button><span class="sub" id="msg"></span></div>
+</details></section>
+
+<dialog id="dlg">
+  <p class="lb">タスク名</p><input id="fTitle">
+  <p class="lb">カテゴリ</p><select id="fCat"></select>
+  <p class="lb">優先度</p><select id="fPri"></select>
+  <p class="lb">ステータス</p><select id="fSt"></select>
+  <div id="whoBox"><p class="lb">担当者</p><select id="fWho"></select></div>
+  <p class="lb">期限</p><input id="fDue" type="date">
+  <p class="lb">メモ</p><textarea id="fMemo" rows="3"></textarea>
+  <p class="err" id="err"></p>
+  <div class="row"><button class="pri" id="save">保存</button><button id="cancel">キャンセル</button><button id="del">削除</button></div>
+</dialog>
+
+<script>
+// ===== 設定値：ここを変えれば人数上限や選択肢を変更できるよ =====
+const MAX_MEMBERS = 15;
+const DUE_DAYS = 3; // 期限が「近い」とみなす日数（変えたい時はここの数字を書き換える）
+const STATUS = [["todo","○","未着手"],["doing","◐","進行中"],["review","◎","レビュー待ち"],["done","●","完了"]];
+const CATS = ["企画","プログラム","グラフィック","サウンド","シナリオ","テスト"];
+const PRI = {high:"高",mid:"中",low:"低"};
+const THEMES = {mint:"ぷにぷにミント",cream:"やさしいクリーム",mist:"霧のブルー",peach:"ピーチ",lavender:"ラベンダー",forest:"森の集落",night:"やさしいナイト",charcoal:"チャコール",retro:"ドットレトロ"};
+const COLORS = ["#FFB4A2","#FFD27D","#B5E48C","#8ED1E8","#C3B1E1","#F7A8D0","#9BE3C9","#E6C79C"];
+
+// ===== 便利な小道具 =====
+const $ = id => document.getElementById(id);
+const uid = () => Math.random().toString(36).slice(2,9);
+// ユーザーの入力を安全に表示するための変換（HTMLとして解釈されないようにする）
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const opts = (arr, sel) => arr.map(([v,l]) => `<option value="${esc(v)}"${v===sel?" selected":""}>${esc(l)}</option>`).join("");
+// 保存先が使えない場合でも落ちないように try/catch で包む
+const get = k => { try { return localStorage.getItem(k); } catch(e) { return null; } };
+const set = (k,v) => { try { localStorage.setItem(k,v); } catch(e) {} };
+
+let db, filter = "", editing = null;
+let hideDone = get("gtm-hidedone") === "1"; // 完了タスクを隠すか（自分のブラウザに記憶される）
+
+// ===== データの読み込みと保存 =====
+function sample(){
+  const m = ["ゆう","みく","けん"].map(n => ({id:uid(), name:n}));
+  const T = (title,cat,pri,status,a) => ({id:uid(),title,cat,pri,status,assignee:a,due:"",memo:""});
+  return {current:"p1", me:"", projects:[{id:"p1", name:"スライム冒険（サンプル）", theme:"mint", specUrl:"", members:m, feed:[],
+    tasks:[T("ジャンプの挙動を調整","プログラム","high","doing",m[0].id), T("ステージ1のマップ作成","グラフィック","mid","todo",m[1].id),
+           T("スライムの移動アニメ","グラフィック","mid","done",m[1].id), T("集落のBGM案","サウンド","low","review",m[2].id)]}]};
+}
+function load(){
+  db = Store.read(); // 保存先は Store にまとめてある（後でフォルダ保存やオンライン保存に差し替えやすい）
+  if(!db || !db.projects || !db.projects.length){ db = sample(); db.projects[0].tasks = []; db.projects[0].members = []; } // 最初は空のプロジェクトから始める
+  db = migrate(db); // データの形を最新版にそろえる
+  // 以前のサンプルを「わんだーすらいむ」に変える（手を加えていないサンプルの中身は空にする）
+  const ST = ["ジャンプの挙動を調整","ステージ1のマップ作成","スライムの移動アニメ","集落のBGM案"], SM = ["ゆう","みく","けん"];
+  db.projects.forEach(p => {
+    if(p.name !== "スライム冒険（サンプル）") return;
+    p.name = "わんだーすらいむ";
+    if(p.tasks.length === 4 && p.tasks.every(t => ST.includes(t.title))){ p.tasks = []; p.feed = []; }
+    if(!p.tasks.length && p.members.length === 3 && p.members.every(m => SM.includes(m.name))) p.members = [];
+  });
+  save();
+}
+// 保存先をまとめた部分：今はブラウザ内保存。ここを入れ替えるだけで保存先を変えられる
+const Store = {
+  read(){ try { return JSON.parse(get("gtm-data")); } catch(e) { return null; } },
+  write(d){ set("gtm-data", JSON.stringify(d)); }
+};
+function save(){ Store.write(db); }
+
+// データの形のバージョン管理：形を変えたら d.v を増やして、下に移行処理を足す
+function migrate(d){
+  if(!d.v) d.v = 1;
+  if(d.v < 2){ // v2：タスクに「更新日時・更新者・削除の印」を追加
+    d.projects.forEach(p => p.tasks.forEach(t => { t.updatedAt = t.updatedAt || 0; t.updatedBy = t.updatedBy || ""; t.deleted = !!t.deleted; }));
+    d.v = 2;
+  }
+  return d;
+}
+// 読み込んだJSONがちゃんとした形かを確かめる
+const isValid = d => d && Array.isArray(d.projects) && d.projects.length > 0 &&
+  d.projects.every(p => p && typeof p.id === "string" && typeof p.name === "string" && Array.isArray(p.tasks) && Array.isArray(p.members) && Array.isArray(p.feed));
+const cur = () => db.projects.find(p => p.id === db.current) || db.projects[0];
+// 更新フィードに1行追加する（誰が・いつ・何をしたか）
+function log(text){ const p = cur(); p.feed.unshift({t:Date.now(), who:db.me || "だれか", text}); p.feed = p.feed.slice(0,100); }
+function commit(text){ if(text) log(text); save(); render(); }
+
+// 担当者の色つきマーク（色だけでなく頭文字でも区別する）
+function dot(p, id){
+  const i = p.members.findIndex(m => m.id === id);
+  if(i < 0) return `<span class="dot" style="background:#ddd">?</span>`;
+  return `<span class="dot" style="background:${COLORS[i % COLORS.length]}">${esc(p.members[i].name.slice(0,1))}</span>`;
+}
+
+// ===== 画面の描画 =====
+function render(){
+  const p = cur(); db.current = p.id;
+  const solo = p.mode === "solo"; // 個人モードかどうか（古いデータは mode が無いのでチーム扱い）
+  $("prj").innerHTML = opts(db.projects.map(x => [x.id, x.name]), p.id);
+  // テーマ：自分で選んだもの → プロジェクトの標準 → 端末の明暗、の順で決まる
+  const eff = get("gtm-theme") || p.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "mint");
+  document.documentElement.dataset.theme = eff;
+  $("thm").innerHTML = opts(Object.entries(THEMES), eff);
+  $("pTheme").innerHTML = opts(Object.entries(THEMES), p.theme);
+  const okUrl = /^https:\/\//i.test(p.specUrl || ""); $("spec").hidden = !okUrl; $("spec").href = okUrl ? p.specUrl : "#";
+  $("specUrl").value = p.specUrl || "";
+
+  $("chips").innerHTML = `<button class="chip${filter?"":" on"}" data-f="">全員</button>` +
+    p.members.map(m => `<button class="chip${filter===m.id?" on":""}" data-f="${m.id}">${dot(p,m.id)} ${esc(m.name)}</button>`).join("");
+
+  const today = ymd(new Date());
+  const order = {high:0, mid:1, low:2};
+  $("board").innerHTML = STATUS.filter(s => !(hideDone && s[0] === "done")).map(([k,icon,label]) => {
+    const list = p.tasks.filter(t => !t.deleted && t.status===k && (!filter || t.assignee===filter))
+      .sort((a,b) => order[a.pri]-order[b.pri] || (a.due||"9").localeCompare(b.due||"9"));
+    return `<div class="col"><h3><span>${icon} ${label}</span><span>${list.length}</span></h3><div class="list">` +
+      (list.map(t => `<div class="card" data-id="${t.id}"><b>${esc(t.title)}</b>
+        <div class="meta"><span class="tag">${esc(t.cat)}</span><span class="tag">優先 ${PRI[t.pri]}</span>${solo ? "" : dot(p,t.assignee)}
+        ${t.due ? (t.due < today && t.status!=="done" ? `<span class="late">期限切れ ${esc(t.due)}</span>` : `<span>〜${esc(t.due)}</span>`) : ""}</div>
+        <div class="mv"><button data-mv="-1" aria-label="左の列へ">◀</button><button data-mv="1" aria-label="右の列へ">▶</button></div></div>`).join("") || `<p class="sub">なし</p>`) + `</div></div>`;
+  }).join("");
+
+  $("feed").innerHTML = p.feed.slice(0,30).map(f =>
+    `<li><span class="sub">${new Date(f.t).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span> <b>${esc(f.who)}</b> ${esc(f.text)}</li>`).join("")
+    || `<li class="sub">まだ更新はないよ。タスクを動かすとここに記録される。</li>`;
+
+  $("cnt").textContent = `(${p.members.length}/${MAX_MEMBERS})`;
+  $("mem").innerHTML = p.members.map(m => `<div class="row" style="margin:2px 0">${dot(p,m.id)} ${esc(m.name)} <button data-rm="${m.id}" aria-label="${esc(m.name)}を削除">削除</button></div>`).join("");
+  $("me").innerHTML = opts([["","未選択"], ...p.members.map(m => [m.name, m.name])], db.me);
+  renderAlert(); updateNotif();
+  // 個人/チームで表示を切り替える
+  $("pMode").innerHTML = opts([["team","チーム"],["solo","個人"]], p.mode || "team");
+  $("feedOn").checked = p.feedOn !== false;
+  $("feedBox").hidden = p.feedOn === false;
+  $("chips").style.display = solo ? "none" : "";
+  $("whoBox").hidden = solo;
+  $("pName").value = p.name;
+  $("delP").disabled = db.projects.length < 2; // 最後の1つは消せない
+  delArm = false; $("delMsg").textContent = "";
+  $("hd").textContent = hideDone ? `完了を表示する（${p.tasks.filter(t => !t.deleted && t.status === "done").length}件）` : "完了を隠す";
+  document.querySelectorAll(".teamOnly").forEach(e => e.hidden = solo);
+}
+
+// ===== タスクの編集ダイアログ =====
+function openEdit(id){
+  const p = cur();
+  editing = p.tasks.find(t => t.id === id) || {id:uid(), title:"", cat:CATS[1], pri:"mid", status:"todo", assignee:"", due:"", memo:"", isNew:true};
+  $("fTitle").value = editing.title; $("fCat").innerHTML = opts(CATS.map(c => [c,c]), editing.cat);
+  $("fPri").innerHTML = opts(Object.entries(PRI), editing.pri);
+  $("fSt").innerHTML = opts(STATUS.map(s => [s[0], s[1]+" "+s[2]]), editing.status);
+  $("fWho").innerHTML = opts([["","未定"], ...p.members.map(m => [m.id, m.name])], editing.assignee);
+  $("fDue").value = editing.due; $("fMemo").value = editing.memo;
+  $("err").textContent = ""; $("del").hidden = !!editing.isNew; $("dlg").showModal();
+}
+$("save").onclick = () => {
+  const title = $("fTitle").value.trim();
+  if(!title){ $("err").textContent = "タスク名を入力してね"; return; }
+  const p = cur(), t = editing, oldSt = t.status;
+  Object.assign(t, {title, cat:$("fCat").value, pri:$("fPri").value, status:$("fSt").value, assignee:$("fWho").value, due:$("fDue").value, memo:$("fMemo").value, updatedAt:Date.now(), updatedBy:db.me || ""});
+  let msg = `「${title}」を編集`;
+  if(t.isNew){ delete t.isNew; p.tasks.push(t); msg = `「${title}」を追加`; }
+  else if(oldSt !== t.status) msg = `「${title}」を ${STATUS.find(s=>s[0]===t.status)[2]} にした`;
+  $("dlg").close(); commit(msg);
+};
+$("cancel").onclick = () => $("dlg").close();
+$("del").onclick = () => { // 削除は「消した印」を付けるだけ（Gitで合流しても復活しにくい）
+  editing.deleted = true; editing.updatedAt = Date.now(); editing.updatedBy = db.me || "";
+  $("dlg").close(); commit(`「${editing.title}」を削除`);
+};
+
+// ===== ボタン操作 =====
+$("add").onclick = () => openEdit();
+$("board").onclick = e => {
+  const card = e.target.closest(".card"); if(!card) return;
+  const mv = e.target.closest("[data-mv]");
+  if(!mv) return openEdit(card.dataset.id);
+  const t = cur().tasks.find(x => x.id === card.dataset.id);
+  const i = STATUS.findIndex(s => s[0] === t.status) + Number(mv.dataset.mv);
+  if(i < 0 || i >= STATUS.length) return;
+  t.status = STATUS[i][0]; t.updatedAt = Date.now(); t.updatedBy = db.me || ""; commit(`「${t.title}」を ${STATUS[i][2]} に移動`);
+};
+$("chips").onclick = e => { const b = e.target.closest("[data-f]"); if(b){ filter = b.dataset.f; render(); } };
+$("prj").onchange = e => { db.current = e.target.value; filter = ""; save(); render(); };
+$("thm").onchange = e => { set("gtm-theme", e.target.value); render(); };
+$("pTheme").onchange = e => { cur().theme = e.target.value; set("gtm-theme", ""); commit(`標準テーマを「${THEMES[e.target.value]}」にした`); };
+$("specUrl").onchange = e => {
+  const u = e.target.value.trim(); // 安全のため https:// のリンクだけ許可する
+  if(u && !/^https:\/\//i.test(u)){ e.target.value = cur().specUrl || ""; $("msg").textContent = "仕様書のURLは https:// から始まるものだけ使えるよ"; return; }
+  cur().specUrl = u; commit("仕様書のリンクを更新");
+};
+$("me").onchange = e => { db.me = e.target.value; save(); render(); };
+$("addM").onclick = () => {
+  const p = cur(), n = $("newM").value.trim();
+  if(!n || p.members.length >= MAX_MEMBERS) return;
+  p.members.push({id:uid(), name:n}); $("newM").value = ""; commit(`メンバー「${n}」を追加`);
+};
+$("mem").onclick = e => {
+  const id = e.target.dataset.rm; if(!id) return;
+  const p = cur(); p.members = p.members.filter(m => m.id !== id);
+  p.tasks.forEach(t => { if(t.assignee === id) t.assignee = ""; }); commit("メンバーを削除");
+};
+$("addP").onclick = () => {
+  const n = $("newP").value.trim(); if(!n) return;
+  const old = cur(), p = {id:uid(), name:n, theme:old.theme, specUrl:"", members:$("keepM").checked ? JSON.parse(JSON.stringify(old.members)) : [], tasks:[], feed:[]};
+  db.projects.push(p); db.current = p.id; $("newP").value = ""; filter = ""; commit(`プロジェクト「${n}」を作成`);
+};
+// 書き出し・読み込み：ファイル保存は使えないので、テキストをコピーして使う
+$("exp").onclick = () => { $("json").value = JSON.stringify(db, null, 1); $("json").select(); $("msg").textContent = "コピーして保存してね"; };
+$("imp").onclick = () => {
+  try { const d = JSON.parse($("json").value); if(!isValid(d)) throw 0; db = migrate(d); if(!db.projects.some(p => p.id === db.current)) db.current = db.projects[0].id; save(); render(); $("msg").textContent = "読み込んだよ"; }
+  catch(e) { $("msg").textContent = "JSONの形式が違うみたい"; }
+};
+
+// ===== 期限が近いタスクのお知らせ =====
+// 日付を「2026-11-18」の形にする（日本時間のズレが出ないよう、端末の日付を使う）
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+
+// 「未完了」で「期限がDUE_DAYS日以内（期限切れ含む）」のタスクを集める
+function dueTasks(){
+  const p = cur(), limit = new Date(); limit.setDate(limit.getDate() + DUE_DAYS);
+  // 設定で「あなたの名前」を選んでいれば、自分の担当だけに絞る
+  const mine = p.mode === "solo" ? null : p.members.find(m => m.name === db.me);
+  return p.tasks.filter(t => !t.deleted && t.due && t.status !== "done" && t.due <= ymd(limit) && (!mine || t.assignee === mine.id))
+    .sort((a,b) => a.due.localeCompare(b.due));
+}
+
+// 画面の上に出すお知らせ欄
+function renderAlert(){
+  const box = $("alert"), list = dueTasks(), today = ymd(new Date());
+  box.hidden = !list.length;
+  if(!list.length) return;
+  const own = cur().members.some(m => m.name === db.me);
+  const canAsk = "Notification" in window && Notification.permission === "default";
+  box.innerHTML = `<h3>期限が近いタスク（${DUE_DAYS}日以内）${list.length}件</h3>` +
+    `<p class="sub" ${cur().mode === "solo" ? "hidden" : ""}>${own ? "あなたの担当だけ表示中" : "全員分を表示中（設定で名前を選ぶと自分の分だけになるよ）"}</p><ul>` +
+    list.map(t => `<li>${cur().mode === "solo" ? "" : dot(cur(), t.assignee)} ${esc(t.title)} ${t.due < today ? `<span class="late">期限切れ ${esc(t.due)}</span>` : `<span class="tag">〜${esc(t.due)}</span>`}</li>`).join("") + `</ul>` +
+    (canAsk ? `<button id="ask" style="margin-top:8px">デスクトップ通知を許可する</button>` : "");
+  // 許可ボタン：押すとブラウザが許可の確認を出す
+  if($("ask")) $("ask").onclick = () => Promise.resolve(Notification.requestPermission()).then(() => { renderAlert(); notifyOnce(); }).catch(() => {});
+}
+
+// ブラウザのデスクトップ通知（開いたときに1回だけ出す）
+let notified = false;
+function notifyOnce(){
+  if(notified || !("Notification" in window) || Notification.permission !== "granted") return;
+  const list = dueTasks(); if(!list.length) return;
+  notified = true;
+  try { new Notification("期限が近いタスクが" + list.length + "件あるよ", {body: list.slice(0,3).map(t => t.title + "（" + t.due + "）").join("\n")}); } catch(e) {}
+}
+
+// 完了タスクの表示/非表示
+$("hd").onclick = () => { hideDone = !hideDone; set("gtm-hidedone", hideDone ? "1" : "0"); render(); };
+
+// プロジェクト名の変更
+$("rename").onclick = () => {
+  const n = $("pName").value.trim(), p = cur(); if(!n || n === p.name) return;
+  const old = p.name; p.name = n; commit(`プロジェクト名を「${old}」から「${n}」に変更`);
+};
+
+// プロジェクトの削除（うっかり防止で、1回目は確認だけ、2回目で削除）
+let delArm = false;
+$("delP").onclick = () => {
+  if(!delArm){ delArm = true; $("delMsg").textContent = "もう一度押すと、タスクごと完全に消えるよ"; return; }
+  const p = cur(); db.projects = db.projects.filter(x => x.id !== p.id);
+  db.current = db.projects[0].id; filter = ""; save(); render();
+};
+
+// 個人/チームの切り替え（個人にした時は、更新フィードを初期で隠す）
+$("pMode").onchange = e => {
+  const p = cur(); p.mode = e.target.value; filter = "";
+  if(p.mode === "solo") p.feedOn = false;
+  commit(`制作形態を${p.mode === "solo" ? "個人" : "チーム"}にした`);
+};
+$("feedOn").onchange = e => { cur().feedOn = e.target.checked; save(); render(); };
+
+// 設定欄の通知ボタン：いつでも許可の状態を確認・変更できる
+function updateNotif(){
+  $("notifSt").textContent = !("Notification" in window) ? "このブラウザでは使えないよ"
+    : {granted:"許可済み", denied:"ブロック中（ブラウザの設定で許可してね）", default:"まだ許可してないよ"}[Notification.permission];
+}
+$("notif").onclick = () => {
+  if(!("Notification" in window)) return;
+  Promise.resolve(Notification.requestPermission()).then(() => { updateNotif(); renderAlert(); notifyOnce(); }).catch(() => {});
+};
+
+load(); render(); notifyOnce();
+</script>
+</body>
+</html>
