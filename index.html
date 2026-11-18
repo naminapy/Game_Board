@@ -69,6 +69,27 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
 .seg{height:100%}
 .crow{display:grid;grid-template-columns:6em 1fr 4.5em;gap:8px;align-items:center;font-size:13px;margin:4px 0}
 .crow span:last-child{text-align:right}
+/* ガント風スケジュール（横に日付、縦にタスク） */
+.gantt{overflow-x:auto}
+.gr{display:flex;align-items:center;height:36px;border-bottom:1px solid var(--bd)}
+.gl{flex:0 0 190px;position:sticky;left:0;z-index:2;background:var(--panel);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;padding-right:6px}
+.gt{position:relative;height:100%;flex:none;display:flex}
+.gd{flex:none;font-size:11px;text-align:center;color:var(--sub);line-height:36px}
+.gd.we{background:rgba(128,128,128,.15)}
+.gb{position:absolute;top:7px;height:22px;border-radius:11px;cursor:pointer}
+/* バーの色：未着手=枠だけ、進行中=濃い色、レビュー待ち=斜線、完了=メインカラー */
+.s-todo{background:var(--card);border:2px solid var(--sub)}.s-doing{background:var(--sub)}.s-review{background:repeating-linear-gradient(45deg,var(--sub) 0 6px,var(--card) 6px 10px)}.s-done{background:var(--ac)}
+.glate{outline:2px solid #C0392B}
+/* タブ（ボード / スケジュール / 進み具合）の見た目と、タブごとの表示切り替え */
+.tabs{display:flex;gap:6px;padding:0 12px 8px}
+.tabs button{flex:1;border-radius:99px}
+.tabs button.on{background:var(--ac);color:var(--on);border-color:var(--ac);font-weight:700}
+#vGantt,#vStats{display:none}
+body[data-tab=gantt] #vGantt,body[data-tab=stats] #vStats{display:block}
+body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#tools,#board){display:none}
+.gm,.gtd{position:absolute;top:0;bottom:0;width:0;pointer-events:none;z-index:1}
+.gm{border-left:2px dashed var(--ac)}.gtd{border-left:2px solid var(--tx);opacity:.5}
+.gm span{position:absolute;top:0;left:3px;font-size:10px;white-space:nowrap;background:var(--ac);color:var(--on);padding:0 4px;border-radius:4px}
 </style>
 </head>
 <body>
@@ -77,13 +98,15 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
   <select id="thm" aria-label="テーマ"></select>
   <a id="spec" class="btn" target="_blank" rel="noopener" hidden>仕様書を開く</a>
 </header>
+<nav class="tabs" id="tabs"><button data-tab="board">ボード</button><button data-tab="gantt">スケジュール</button><button data-tab="stats">進み具合</button></nav>
 <div class="chips" id="chips"></div>
-<div class="row" style="padding:0 12px 4px"><button class="pri" id="add">＋ タスクを追加</button><button id="hd"></button></div>
+<div class="row" id="tools" style="padding:0 12px 4px"><button class="pri" id="add">＋ タスクを追加</button><button id="hd"></button></div>
 <section class="box" id="bk" hidden></section>
 <section class="box" id="alert" hidden></section>
 <section class="box" id="cd"></section>
 <div class="board" id="board"></div>
-<section class="box"><div class="row"><h3 style="margin:0;flex:1">進み具合</h3><button id="png">PNGで保存</button><button id="pdf">PDFで保存</button></div><div id="charts"></div><span class="sub" id="repMsg"></span></section>
+<section class="box" id="vGantt"><h3>スケジュール</h3><p class="sub">バーを押すと編集。点線は目標、実線は今日、赤い枠は期限切れ。</p><div class="gantt" id="gantt"></div></section>
+<section class="box" id="vStats"><div class="row"><h3 style="margin:0;flex:1">進み具合</h3><button id="png">PNGで保存</button><button id="pdf">PDFで保存</button></div><div id="charts"></div><span class="sub" id="repMsg"></span></section>
 
 <section class="box" id="feedBox"><h3>更新フィード</h3><ul id="feed"></ul></section>
 
@@ -100,6 +123,8 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
   <div class="row"><button id="notif">通知を許可する</button><span class="sub" id="notifSt"></span></div>
   <div class="teamOnly"><p class="lb">メンバー <span id="cnt"></span></p><div id="mem"></div>
   <div class="row"><input id="newM" placeholder="名前"><button id="addM">追加</button></div></div>
+  <p class="lb">テンプレート（今のタスクの雛形を保存）</p>
+  <div class="row"><input id="tplName" placeholder="テンプレート名（例：アクションゲーム）"><button id="tplSave">保存</button></div><div id="tplList"></div>
   <p class="lb">新規プロジェクト</p>
   <div class="row"><input id="newP" placeholder="ゲーム名"><button id="addP">作成</button></div>
   <label class="sub"><input type="checkbox" id="keepM" checked> メンバーを引き継ぐ</label>
@@ -115,6 +140,7 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
   <p class="lb">優先度</p><select id="fPri"></select>
   <p class="lb">ステータス</p><select id="fSt"></select>
   <div id="whoBox"><p class="lb">担当者</p><select id="fWho"></select></div>
+  <p class="lb">開始日</p><input id="fStart" type="date">
   <p class="lb">期限</p><input id="fDue" type="date">
   <p class="lb">メモ</p><textarea id="fMemo" rows="3"></textarea>
   <p class="err" id="err"></p>
@@ -233,7 +259,7 @@ function render(){
   $("cnt").textContent = `(${p.members.length}/${MAX_MEMBERS})`;
   $("mem").innerHTML = p.members.map(m => `<div class="row" style="margin:2px 0">${dot(p,m.id)} ${esc(m.name)} <button data-rm="${m.id}" aria-label="${esc(m.name)}を削除">削除</button></div>`).join("");
   $("me").innerHTML = opts([["","未選択"], ...p.members.map(m => [m.name, m.name])], db.me);
-  renderAlert(); updateNotif(); renderReport(); renderMs(); backupNote(); renderTrash();
+  renderAlert(); updateNotif(); renderReport(); renderMs(); backupNote(); renderTrash(); renderGantt(); renderTpl(); applyTab();
   // 個人/チームで表示を切り替える
   $("pMode").innerHTML = opts([["team","チーム"],["solo","個人"]], p.mode || "team");
   $("feedOn").checked = p.feedOn !== false;
@@ -255,14 +281,16 @@ function openEdit(id){
   $("fPri").innerHTML = opts(Object.entries(PRI), editing.pri);
   $("fSt").innerHTML = opts(STATUS.map(s => [s[0], s[1]+" "+s[2]]), editing.status);
   $("fWho").innerHTML = opts([["","未定"], ...p.members.map(m => [m.id, m.name])], editing.assignee);
-  $("fDue").value = editing.due; $("fMemo").value = editing.memo;
+  $("fStart").value = editing.start || ""; $("fDue").value = editing.due; $("fMemo").value = editing.memo;
   $("err").textContent = ""; $("del").hidden = !!editing.isNew; $("dlg").showModal();
 }
 $("save").onclick = () => {
   const title = $("fTitle").value.trim();
   if(!title){ $("err").textContent = "タスク名を入力してね"; return; }
+  const sd = $("fStart").value, dd = $("fDue").value;
+  if(sd && dd && sd > dd){ $("err").textContent = "開始日は期限より前にしてね"; return; }
   const p = cur(), t = editing, oldSt = t.status;
-  Object.assign(t, {title, cat:$("fCat").value, pri:$("fPri").value, status:$("fSt").value, assignee:$("fWho").value, due:$("fDue").value, memo:$("fMemo").value, updatedAt:Date.now(), updatedBy:db.me || ""});
+  Object.assign(t, {title, cat:$("fCat").value, pri:$("fPri").value, status:$("fSt").value, assignee:$("fWho").value, start:$("fStart").value, due:$("fDue").value, memo:$("fMemo").value, updatedAt:Date.now(), updatedBy:db.me || ""});
   let msg = `「${title}」を編集`;
   if(t.isNew){ delete t.isNew; p.tasks.push(t); msg = `「${title}」を追加`; }
   else if(oldSt !== t.status) msg = `「${title}」を ${STATUS.find(s=>s[0]===t.status)[2]} にした`;
@@ -437,6 +465,67 @@ $("pdf").onclick = () => {
   try { const {c, W, H} = drawReport(), h = 210 * H / W, pdf = new window.jspdf.jsPDF({unit:"mm", format:[210, h]});
     pdf.addImage(c.toDataURL("image/png"), "PNG", 0, 0, 210, h); pdf.save(fileName("pdf")); $("repMsg").textContent = ""; }
   catch(e) { $("repMsg").textContent = "PDFを作れなかったよ（通信が必要）"; }
+};
+
+// ===== タブの切り替え（ボード / スケジュール / 進み具合） =====
+let tab = get("gtm-tab") || "board"; // 最後に見たタブをブラウザが覚えてくれる
+function applyTab(){
+  document.body.dataset.tab = tab; // CSSがこの値で表示する場所を切り替える
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+}
+$("tabs").onclick = e => {
+  const b = e.target.closest("[data-tab]"); if(!b) return;
+  tab = b.dataset.tab; set("gtm-tab", tab); applyTab();
+  if(tab === "gantt") renderGantt(); // 表示されたときに幅を測り直す
+};
+addEventListener("resize", () => { if(tab === "gantt") renderGantt(); });
+
+// ===== ガント風スケジュール（横に日付、縦にタスク） =====
+let ganttScrolled = false;
+function renderGantt(){
+  const p = cur(), box = $("gantt"), D = 864e5, LW = 190; // LW=左のタスク名欄の幅(px)
+  const parse = s => new Date(s + "T00:00:00"), today = new Date(); today.setHours(0,0,0,0);
+  // 期限があるタスクだけを、開始日順に並べる（開始日が無ければ期限の1日だけのバー）
+  const ts = p.tasks.filter(t => !t.deleted && t.due && !(hideDone && t.status === "done")).sort((a,b) => (a.start || a.due).localeCompare(b.start || b.due));
+  if(!ts.length){ box.innerHTML = '<p class="sub">期限（と開始日）を入れたタスクが、ここに並ぶよ。</p>'; return; }
+  const ms = p.milestones || [];
+  const from = new Date(Math.min(today, ...ts.map(t => parse(t.start || t.due))) - 2 * D);
+  const to = new Date(Math.max(today, ...ts.map(t => parse(t.due)), ...ms.map(m => parse(m.date))) + 3 * D);
+  const n = Math.round((to - from) / D) + 1, idx = d => Math.round((d - from) / D); // idx = 左端から何日目か
+  const W = Math.max(28, Math.floor(((box.clientWidth || 900) - LW) / n)); // 1日の幅。画面の幅いっぱいに広げる（狭いときは横スクロール）
+  const head = Array.from({length:n}, (_, i) => { const d = new Date(+from + i * D), wk = d.getDay() === 0 || d.getDay() === 6;
+    return `<span class="gd${wk ? " we" : ""}" style="width:${W}px">${d.getDate() === 1 || i === 0 ? (d.getMonth() + 1) + "/" : ""}${d.getDate()}</span>`; }).join("");
+  const rows = ts.map(t => { const s = idx(parse(t.start || t.due)), e = idx(parse(t.due)), late = t.due < ymd(today) && t.status !== "done";
+    return `<div class="gr"><span class="gl" title="${esc(t.title)}">${STATUS.find(x => x[0] === t.status)[1]} ${esc(t.title)}</span><div class="gt" style="width:${n * W}px"><div class="gb s-${t.status}${late ? " glate" : ""}" data-id="${t.id}" style="left:${s * W}px;width:${(e - s + 1) * W - 2}px"></div></div></div>`; }).join("");
+  // 縦線（目標は点線、今日は実線）
+  const line = (cls, d, label) => `<div class="${cls}" style="left:${LW + idx(d) * W + W / 2}px">${label ? `<span>${esc(label)}</span>` : ""}</div>`;
+  box.innerHTML = `<div style="position:relative;width:${LW + n * W}px"><div class="gr"><span class="gl"></span><div class="gt" style="width:${n * W}px">${head}</div></div>${rows}` +
+    ms.map(m => line("gm", parse(m.date), m.name)).join("") + line("gtd", today, "") + `</div>`;
+  if(!ganttScrolled){ box.scrollLeft = Math.max(0, LW + idx(today) * W - 220); ganttScrolled = true; } // 最初だけ今日の位置へスクロール
+}
+$("gantt").onclick = e => { const b = e.target.closest("[data-id]"); if(b) openEdit(b.dataset.id); };
+
+// ===== テンプレート（タスクの雛形を保存して、新しいプロジェクトに使い回す） =====
+function renderTpl(){
+  $("tplList").innerHTML = (db.templates || []).map(t => `<div class="row" style="margin:2px 0">${esc(t.name)} <span class="sub">${t.tasks.length}件</span> <button data-tpluse="${t.id}">これで作る</button> <button data-tpldel="${t.id}">削除</button></div>`).join("") || '<p class="sub">まだないよ</p>';
+}
+$("tplSave").onclick = () => {
+  const n = $("tplName").value.trim(); if(!n) return; const p = cur();
+  // タイトル・カテゴリ・優先度・メモだけを保存（担当者や日付は入れない）
+  (db.templates = db.templates || []).push({id:uid(), name:n, theme:p.theme, tasks:p.tasks.filter(t => !t.deleted).map(t => ({title:t.title, cat:t.cat, pri:t.pri, memo:t.memo}))});
+  $("tplName").value = ""; save(); render();
+};
+$("tplList").onclick = e => {
+  const use = e.target.dataset.tpluse, del = e.target.dataset.tpldel;
+  if(del){ db.templates = db.templates.filter(t => t.id !== del); save(); render(); return; }
+  if(!use) return;
+  const name = $("newP").value.trim();
+  if(!name){ $("msg").textContent = "下の「新規プロジェクト」にゲーム名を入れてから押してね"; return; }
+  const tp = db.templates.find(t => t.id === use);
+  const p = {id:uid(), name, theme:tp.theme, specUrl:"", members:[], milestones:[], feed:[],
+    tasks: tp.tasks.map(t => ({id:uid(), ...t, status:"todo", assignee:"", due:"", start:"", updatedAt:Date.now(), updatedBy:db.me || "", deleted:false}))};
+  db.projects.push(p); db.current = p.id; $("newP").value = ""; filter = "";
+  commit(`テンプレート「${tp.name}」から「${name}」を作成`);
 };
 
 // ===== バックアップ：ファイル保存と、忘れ防止のお知らせ =====
