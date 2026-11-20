@@ -77,6 +77,7 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
 .sec h4{margin:0 0 6px;padding-bottom:6px;border-bottom:1px solid var(--bd);font-size:14px}
 .sec .bar{background:var(--panel)}
 .legend{margin-top:4px}
+.more{width:100%;margin-top:4px}
 .crow span:last-child{text-align:right}
 /* ガント風スケジュール（横に日付、縦にタスク） */
 .gantt{overflow-x:auto}
@@ -162,6 +163,14 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
   </div>
 
   <div class="pane" data-pane="data">
+    <div class="sec"><h4>クラウド同期（GitHub）</h4>
+      <p class="sub">スマホとパソコンで同じデータを見るための設定。トークンはこの端末のブラウザにだけ保存されるよ。</p>
+      <p class="lb">GitHubのユーザー名</p><input id="syOwner">
+      <p class="lb">データ用リポジトリ名</p><input id="syRepo">
+      <p class="lb">トークン（github_pat_ で始まるもの）</p><input id="syToken" type="password" autocomplete="off">
+      <label class="sub"><input type="checkbox" id="syAuto" checked> 開いたときと変更したときに自動で同期する</label>
+      <div class="row" style="margin-top:8px"><button id="sySave" class="pri">保存して同期</button><button id="syNow">今すぐ同期</button></div><p class="sub" id="syncMsg"></p>
+    </div>
     <div class="sec"><h4>バックアップ</h4>
       <div class="row"><button id="expF">ファイルで保存</button><label class="btn" style="cursor:pointer">ファイルから読み込む<input id="impF" type="file" accept=".json,application/json" hidden></label></div>
       <p class="lb">テキストで受け渡す（コピー＆貼り付け）</p><textarea id="json" rows="4"></textarea>
@@ -211,6 +220,8 @@ const get = k => { try { return localStorage.getItem(k); } catch(e) { return nul
 const set = (k,v) => { try { localStorage.setItem(k,v); } catch(e) {} };
 
 let db, filter = "", editing = null;
+const CARD_LIMIT = 50; // 1つの列に最初に出すカードの数（多いときは「さらに表示」で増やす）
+let more = {}, feedShow = 30; const limitOf = k => CARD_LIMIT + (more[k] || 0);
 let hideDone = get("gtm-hidedone") === "1"; // 完了タスクを隠すか（自分のブラウザに記憶される）
 
 // ===== データの読み込みと保存 =====
@@ -240,7 +251,7 @@ const Store = {
   read(){ try { return JSON.parse(get("gtm-data")); } catch(e) { return null; } },
   write(d){ set("gtm-data", JSON.stringify(d)); }
 };
-function save(){ Store.write(db); }
+function save(){ db.mtime = Date.now(); Store.write(db); scheduleSync(); } // 保存のついでに、更新時刻を記録して、自動同期も予約する
 
 // データの形のバージョン管理：形を変えたら d.v を増やして、下に移行処理を足す
 function migrate(d){
@@ -257,7 +268,13 @@ const isValid = d => d && Array.isArray(d.projects) && d.projects.length > 0 &&
   d.projects.every(p => p && typeof p.id === "string" && typeof p.name === "string" && Array.isArray(p.tasks) && Array.isArray(p.members) && Array.isArray(p.feed));
 const cur = () => db.projects.find(p => p.id === db.current) || db.projects[0];
 // 更新フィードに1行追加する（誰が・いつ・何をしたか）
-function log(text){ const p = cur(); p.feed.unshift({t:Date.now(), who:db.me || "だれか", text}); p.feed = p.feed.slice(0,100); }
+// 更新フィードに1行追加する。同じ人が同じことを10分以内に繰り返したら、1行にまとめる（×回数）
+function log(text){
+  const p = cur(), who = db.me || "だれか", now = Date.now(), top = p.feed[0];
+  if(top && top.who === who && top.text === text && now - top.t < 6e5){ top.n = (top.n || 1) + 1; top.t = now; return; }
+  p.feed.unshift({t:now, who, text});
+  if(p.feed.length > 100){ p.feedCut = (p.feedCut || 0) + p.feed.length - 100; p.feed = p.feed.slice(0, 100); } // 古いものは省略して、件数だけ覚えておく
+}
 function commit(text){ if(text) log(text); save(); render(); }
 
 // 担当者の色つきマーク（色だけでなく頭文字でも区別する）
@@ -289,20 +306,22 @@ function render(){
     const list = p.tasks.filter(t => !t.deleted && t.status===k && (!filter || t.assignee===filter))
       .sort((a,b) => order[a.pri]-order[b.pri] || (a.due||"9").localeCompare(b.due||"9"));
     return `<div class="col" data-st="${k}"><h3><span>${icon} ${label}</span><span>${list.length}</span></h3><div class="list">` +
-      (list.map(t => `<div class="card" data-id="${t.id}" draggable="true"><b>${esc(t.title)}</b>
+      (list.slice(0, limitOf(k)).map(t => `<div class="card" data-id="${t.id}" draggable="true" tabindex="0" role="group" aria-label="${esc(t.title)}"><b>${esc(t.title)}</b>
         <div class="meta"><span class="tag">${esc(t.cat)}</span><span class="tag">優先 ${PRI[t.pri]}</span>${t.phase ? `<span class="tag">${esc(t.phase)}</span>` : ""}${t.est ? `<span class="tag">${t.est}h</span>` : ""}${solo ? "" : dot(p,t.assignee)}
         ${t.due ? (t.due < today && t.status!=="done" ? `<span class="late">期限切れ ${esc(t.due)}</span>` : `<span>〜${esc(t.due)}</span>`) : ""}</div>
-        <div class="mv"><button data-mv="-1" aria-label="左の列へ">◀</button><button data-mv="1" aria-label="右の列へ">▶</button></div></div>`).join("") || `<p class="sub">なし</p>`) + `</div></div>`;
+        <div class="mv"><button data-mv="-1" aria-label="左の列へ">◀</button><button data-mv="1" aria-label="右の列へ">▶</button></div></div>`).join("") || `<p class="sub">なし</p>`) + (list.length > limitOf(k) ? `<button class="more" data-more="${k}">さらに ${list.length - limitOf(k)}件を表示</button>` : "") + `</div></div>`;
   }).join("");
 
-  $("feed").innerHTML = p.feed.slice(0,30).map(f =>
-    `<li><span class="sub">${new Date(f.t).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span> <b>${esc(f.who)}</b> ${esc(f.text)}</li>`).join("")
+  $("feed").innerHTML = p.feed.slice(0, feedShow).map(f =>
+    `<li><span class="sub">${new Date(f.t).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span> <b>${esc(f.who)}</b> ${esc(f.text)}${f.n > 1 ? ` <span class="sub">（×${f.n}）</span>` : ""}</li>`).join("")
+    + (p.feed.length > feedShow ? `<li><button id="feedMore">さらに${Math.min(30, p.feed.length - feedShow)}件を表示</button></li>` : "")
+    + (p.feedCut ? `<li class="sub">これより古い更新 ${p.feedCut}件は省略したよ</li>` : "")
     || `<li class="sub">まだ更新はないよ。タスクを動かすとここに記録される。</li>`;
 
   $("cnt").textContent = `(${p.members.length}/${MAX_MEMBERS})`;
   $("mem").innerHTML = p.members.map(m => `<div class="row" style="margin:2px 0">${dot(p,m.id)} ${esc(m.name)} <button data-rm="${m.id}" aria-label="${esc(m.name)}を削除">削除</button></div>`).join("");
   $("me").innerHTML = opts([["","未選択"], ...p.members.map(m => [m.name, m.name])], db.me);
-  renderAlert(); updateNotif(); renderReport(); renderMs(); backupNote(); renderTrash(); renderGantt(); renderTpl(); applyTab(); applyStab();
+  renderAlert(); updateNotif(); renderReport(); renderMs(); backupNote(); renderTrash(); if(tab === "gantt") renderGantt(); renderTpl(); applyTab(); applyStab();
   // 個人/チームで表示を切り替える
   $("pMode").innerHTML = opts([["team","チーム"],["solo","個人"]], p.mode || "team");
   $("feedOn").checked = p.feedOn !== false;
@@ -482,7 +501,7 @@ $("msList").onclick = e => { const id = e.target.dataset.msrm; if(!id) return; c
 // 画像(PNG)とPDFの書き出し：レポートを<canvas>に絵として描いて、それを保存する
 function drawReport(){
   const R = repData(), css = getComputedStyle(document.documentElement), v = n => css.getPropertyValue(n).trim();
-  const rows = R.open.slice(0, 30), W = 720, H = Math.max(760, 400 + (R.cats.length + R.mem.length) * 26 + rows.length * 24 + 40);
+  const rows = R.open.slice(0, 30), W = 720, H = Math.max(760, 400 + (R.cats.length + R.mem.length + R.phases.length) * 26 + (R.phases.length ? 30 : 0) + (R.estAll ? 56 : 0) + rows.length * 24 + 40);
   const c = document.createElement("canvas"); c.width = W * 2; c.height = H * 2; // 2倍の大きさで描いて、くっきりさせる
   const x = c.getContext("2d"); x.scale(2, 2);
   const font = '"Zen Maru Gothic","Hiragino Sans","Yu Gothic",sans-serif';
@@ -505,6 +524,8 @@ function drawReport(){
   y += 84;
   // 棒グラフの1行ぶん
   const row = (label, f, right) => { txt(label, 13, 24, y + 12, v("--tx"), false, 90); rect(120, y, 460, 14, v("--panel")); rect(120, y, 460 * f, 14, v("--ac")); txt(right, 13, 600, y + 12, v("--tx")); y += 26; };
+  if(R.phases.length){ txt("工程ごとの完了", 14, 24, y, v("--sub"), true); y += 16; R.phases.forEach(([n, d, t]) => row(n, d / t, `${d}/${t}`)); y += 14; }
+  if(R.estAll){ txt("見積時間", 14, 24, y, v("--sub"), true); y += 16; row("完了", R.estDone / R.estAll, `${R.estDone}/${R.estAll}h`); y += 14; }
   txt("カテゴリごとの完了", 14, 24, y, v("--sub"), true); y += 16;
   R.cats.forEach(([n, d, t]) => row(n, d / t, `${d}/${t}`));
   if(R.mem.length){ y += 10; txt("担当者ごとの未完了", 14, 24, y, v("--sub"), true); y += 16; const mx = Math.max(1, ...R.mem.map(r => r[1])); R.mem.forEach(([n, k]) => row(n, k / mx, `${k}件`)); }
@@ -529,10 +550,66 @@ const parseList = s => [...new Set(s.split(/[,、，]/).map(x => x.trim()).filte
 $("catSave").onclick = () => { const l = parseList($("catIn").value); if(!l.length) return; cur().cats = l; commit("カテゴリを変更"); };
 $("phSave").onclick = () => { const l = parseList($("phIn").value); if(!l.length) return; cur().phases = l; commit("工程を変更"); };
 
+// ===== クラウド同期（GitHubの非公開リポジトリの data.json に保存して、端末間で共有） =====
+const syncCfg = () => { try { return JSON.parse(get("gtm-sync")) || {}; } catch(e) { return {}; } }; // ユーザー名・リポジトリ名・トークンはこの端末だけに保存
+const setSyncMsg = t => { $("syncMsg").textContent = t; };
+const b64dec = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g, "")), c => c.charCodeAt(0)));
+const b64enc = s => { let t = ""; new TextEncoder().encode(s).forEach(x => t += String.fromCharCode(x)); return btoa(t); };
+// GitHubに読み書きする（GET=読む、PUT=書く）
+const gh = (c, method, body) => fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/data.json`, {
+  method, cache: "no-store", body: body && JSON.stringify(body),
+  headers: {Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json", "Content-Type": "application/json"}});
+// 2つのデータを合わせる：タスクは1つずつ新しいほうを残す。設定などは新しく保存したほうを優先する
+function mergeDb(a, b){ // a=この端末、b=クラウド
+  const newer = (a.mtime || 0) >= (b.mtime || 0) ? a : b, older = newer === a ? b : a, copy = x => JSON.parse(JSON.stringify(x));
+  const dead = new Set([...(a.deletedProjects || []), ...(b.deletedProjects || [])]);
+  const out = copy(newer); out.deletedProjects = [...dead]; out.mtime = Math.max(a.mtime || 0, b.mtime || 0); out.me = a.me; out.current = a.current;
+  older.projects.forEach(p => { if(!out.projects.some(x => x.id === p.id)) out.projects.push(copy(p)); });
+  out.projects = out.projects.filter(p => !dead.has(p.id));
+  out.projects.forEach(p => {
+    const o = older.projects.find(x => x.id === p.id); if(!o) return;
+    const m = new Map(p.tasks.map(t => [t.id, t]));
+    o.tasks.forEach(t => { const x = m.get(t.id); if(!x || (t.updatedAt || 0) > (x.updatedAt || 0)) m.set(t.id, copy(t)); });
+    p.tasks = [...m.values()];
+    const seen = new Set(); // 更新フィードは両方を合わせて、重複を消して新しい順に100件
+    p.feed = [...p.feed, ...o.feed].filter(f => { const k = f.t + f.who + f.text; return seen.has(k) ? false : seen.add(k); }).sort((x, y) => y.t - x.t).slice(0, 100);
+  });
+  return out;
+}
+async function syncNow(retry = 1){
+  const c = syncCfg(); if(!c.token || !c.owner || !c.repo){ setSyncMsg("ユーザー名・リポジトリ名・トークンを入れてね"); return; }
+  setSyncMsg("同期中…");
+  try {
+    const r = await gh(c, "GET"); let sha, remote = null;
+    if(r.status === 200){ const j = await r.json(); sha = j.sha; remote = JSON.parse(b64dec(j.content)); if(!isValid(remote)) throw new Error("クラウドのデータの形が違うよ"); remote = migrate(remote); }
+    else if(r.status !== 404) throw new Error(r.status === 401 ? "トークンが違うか、期限切れかも" : r.status === 403 ? "権限がないよ（Contents を Read and write にしたか確認）" : "エラー " + r.status);
+    if(remote) db = mergeDb(db, remote);
+    const p = await gh(c, "PUT", {message: "sync " + new Date().toISOString(), content: b64enc(JSON.stringify(db)), ...(sha ? {sha} : {})});
+    if(p.status === 409 || p.status === 422){ if(retry) return syncNow(0); throw new Error("他の端末と同時に更新したみたい。もう一度押してね"); }
+    if(!p.ok) throw new Error(p.status === 404 ? "リポジトリが見つからないよ（名前とトークンの対象を確認）" : "保存できなかったよ（" + p.status + "）");
+    Store.write(db); render(); setSyncMsg("同期できたよ（" + new Date().toLocaleTimeString("ja-JP") + "）");
+  } catch(e) { setSyncMsg("同期できなかった：" + e.message); }
+}
+// 変更から8秒後に自動で同期する（続けて変更したら、最後の変更から数え直す）
+let syncTimer;
+function scheduleSync(){ const c = syncCfg(); if(!c.token || c.auto === false) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, 8000); }
+// 設定欄に保存済みの値を入れる（トークンは見せない）
+function fillSync(){
+  const c = syncCfg(); $("syOwner").value = c.owner || "naminapy"; $("syRepo").value = c.repo || "Game_Board_Data"; $("syAuto").checked = c.auto !== false;
+  $("syToken").placeholder = c.token ? "保存済み（変える時だけ入力）" : ""; $("syToken").value = "";
+}
+$("sySave").onclick = () => {
+  set("gtm-sync", JSON.stringify({owner:$("syOwner").value.trim(), repo:$("syRepo").value.trim(), token:$("syToken").value.trim() || syncCfg().token, auto:$("syAuto").checked}));
+  fillSync(); syncNow();
+};
+$("syNow").onclick = () => syncNow();
+// スマホとパソコンを行き来してアプリに戻ったときも、最新を取り込む
+document.addEventListener("visibilitychange", () => { if(!document.hidden && syncCfg().token && syncCfg().auto !== false) syncNow(); });
+
 // ===== 設定の中の小タブ（一般 / 編集 / データ） =====
 let stab = get("gtm-stab") || "gen"; // 最後に見た小タブを覚えておく
 function applyStab(){
-  document.querySelectorAll("#stabs button").forEach(b => b.classList.toggle("on", b.dataset.stab === stab));
+  document.querySelectorAll("#stabs button").forEach(b => { b.classList.toggle("on", b.dataset.stab === stab); b.setAttribute("aria-current", b.dataset.stab === stab ? "page" : "false"); });
   document.querySelectorAll(".pane").forEach(p => p.classList.toggle("on", p.dataset.pane === stab));
 }
 $("stabs").onclick = e => { const b = e.target.closest("[data-stab]"); if(!b) return; stab = b.dataset.stab; set("gtm-stab", stab); applyStab(); };
@@ -541,7 +618,7 @@ $("stabs").onclick = e => { const b = e.target.closest("[data-stab]"); if(!b) re
 let tab = get("gtm-tab") || "board"; // 最後に見たタブをブラウザが覚えてくれる
 function applyTab(){
   document.body.dataset.tab = tab; // CSSがこの値で表示する場所を切り替える
-  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  document.querySelectorAll("#tabs button").forEach(b => { b.classList.toggle("on", b.dataset.tab === tab); b.setAttribute("aria-current", b.dataset.tab === tab ? "page" : "false"); }); // aria-current：読み上げソフトに「今このタブ」を伝える
 }
 $("tabs").onclick = e => {
   const b = e.target.closest("[data-tab]"); if(!b) return;
@@ -556,7 +633,8 @@ function renderGantt(){
   const p = cur(), box = $("gantt"), D = 864e5, LW = 190; // LW=左のタスク名欄の幅(px)
   const parse = s => new Date(s + "T00:00:00"), today = new Date(); today.setHours(0,0,0,0);
   // 期限があるタスクだけを、開始日順に並べる（開始日が無ければ期限の1日だけのバー）
-  const ts = p.tasks.filter(t => !t.deleted && t.due && !(hideDone && t.status === "done")).sort((a,b) => (a.start || a.due).localeCompare(b.start || b.due));
+  const allTs = p.tasks.filter(t => !t.deleted && t.due && !(hideDone && t.status === "done")).sort((a,b) => (a.start || a.due).localeCompare(b.start || b.due));
+  const ts = allTs.slice(0, 150); // 行が多すぎると重いので、最大150行まで
   if(!ts.length){ box.innerHTML = '<p class="sub">期限（と開始日）を入れたタスクが、ここに並ぶよ。</p>'; return; }
   const ms = p.milestones || [];
   const from = new Date(Math.min(today, ...ts.map(t => parse(t.start || t.due))) - 2 * D);
@@ -566,14 +644,16 @@ function renderGantt(){
   const head = Array.from({length:n}, (_, i) => { const d = new Date(+from + i * D), wk = d.getDay() === 0 || d.getDay() === 6;
     return `<span class="gd${wk ? " we" : ""}" style="width:${W}px">${d.getDate() === 1 || i === 0 ? (d.getMonth() + 1) + "/" : ""}${d.getDate()}</span>`; }).join("");
   const rows = ts.map(t => { const s = idx(parse(t.start || t.due)), e = idx(parse(t.due)), late = t.due < ymd(today) && t.status !== "done";
-    return `<div class="gr"><span class="gl" title="${esc(t.title)}">${STATUS.find(x => x[0] === t.status)[1]} ${esc(t.title)}</span><div class="gt" style="width:${n * W}px"><div class="gb s-${t.status}${late ? " glate" : ""}" data-id="${t.id}" style="left:${s * W}px;width:${(e - s + 1) * W - 2}px"></div></div></div>`; }).join("");
+    return `<div class="gr"><span class="gl" title="${esc(t.title)}">${STATUS.find(x => x[0] === t.status)[1]} ${esc(t.title)}</span><div class="gt" style="width:${n * W}px"><div class="gb s-${t.status}${late ? " glate" : ""}" data-id="${t.id}" tabindex="0" role="button" aria-label="${esc(t.title)} 〜${t.due}" style="left:${s * W}px;width:${(e - s + 1) * W - 2}px"></div></div></div>`; }).join("");
   // 縦線（目標は点線、今日は実線）
   const line = (cls, d, label) => `<div class="${cls}" style="left:${LW + idx(d) * W + W / 2}px">${label ? `<span>${esc(label)}</span>` : ""}</div>`;
   box.innerHTML = `<div style="position:relative;width:${LW + n * W}px"><div class="gr"><span class="gl"></span><div class="gt" style="width:${n * W}px">${head}</div></div>${rows}` +
-    ms.map(m => line("gm", parse(m.date), m.name)).join("") + line("gtd", today, "") + `</div>`;
+    ms.map(m => line("gm", parse(m.date), m.name)).join("") + line("gtd", today, "") + `</div>` +
+    (allTs.length > ts.length ? `<p class="sub">ほか ${allTs.length - ts.length}件は省略したよ。「完了を隠す」などで絞ってね。</p>` : "");
   if(!ganttScrolled){ box.scrollLeft = Math.max(0, LW + idx(today) * W - 220); ganttScrolled = true; } // 最初だけ今日の位置へスクロール
 }
 $("gantt").onclick = e => { const b = e.target.closest("[data-id]"); if(b) openEdit(b.dataset.id); };
+$("gantt").onkeydown = e => { if(e.key === "Enter" && e.target.dataset.id) openEdit(e.target.dataset.id); }; // キーボードでもバーを開ける
 
 // ===== テンプレート（タスクの雛形を保存して、新しいプロジェクトに使い回す） =====
 function renderTpl(){
@@ -631,6 +711,20 @@ $("trash").onclick = e => {
   commit(`「${t.title}」を元に戻した`);
 };
 
+// ===== キーボード操作：カードを選んで Enter で編集、Alt+← / Alt+→ で隣の列へ移動 =====
+$("board").onkeydown = e => {
+  const card = e.target.closest(".card"); if(!card || e.target !== card) return;
+  if(e.key === "Enter"){ e.preventDefault(); openEdit(card.dataset.id); return; }
+  if(e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")){
+    e.preventDefault();
+    const t = cur().tasks.find(x => x.id === card.dataset.id), i = STATUS.findIndex(s => s[0] === t.status) + (e.key === "ArrowRight" ? 1 : -1);
+    if(i < 0 || i >= STATUS.length) return;
+    t.status = STATUS[i][0]; t.updatedAt = Date.now(); t.updatedBy = db.me || "";
+    commit(`「${t.title}」を ${STATUS[i][2]} に移動`);
+    const again = document.querySelector(`.card[data-id="${t.id}"]`); if(again) again.focus(); // 描き直した後も同じカードを選んだままにする
+  }
+};
+
 // ===== ドラッグ＆ドロップでカードを別の列へ移動（PC用。スマホは ◀ ▶ ボタン） =====
 let dragId = null;
 $("board").ondragstart = e => { const c = e.target.closest(".card"); if(c){ dragId = c.dataset.id; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragId); } };
@@ -643,6 +737,10 @@ $("board").ondrop = e => {
   commit(`「${t.title}」を ${STATUS.find(s => s[0] === st)[2]} に移動`);
 };
 $("board").ondragend = () => { dragId = null; };
+
+// 「さらに表示」ボタン（カードが多い列と、更新フィード）
+$("board").addEventListener("click", e => { const b = e.target.closest("[data-more]"); if(b){ more[b.dataset.more] = (more[b.dataset.more] || 0) + CARD_LIMIT; render(); } });
+$("feed").onclick = e => { if(e.target.id === "feedMore"){ feedShow += 30; render(); } };
 
 // 完了タスクの表示/非表示
 $("hd").onclick = () => { hideDone = !hideDone; set("gtm-hidedone", hideDone ? "1" : "0"); render(); };
@@ -657,7 +755,7 @@ $("rename").onclick = () => {
 let delArm = false;
 $("delP").onclick = () => {
   if(!delArm){ delArm = true; $("delMsg").textContent = "もう一度押すと、タスクごと完全に消えるよ"; return; }
-  const p = cur(); db.projects = db.projects.filter(x => x.id !== p.id);
+  const p = cur(); db.projects = db.projects.filter(x => x.id !== p.id); (db.deletedProjects = db.deletedProjects || []).push(p.id); // 消した印を残す（同期で復活させないため）
   db.current = db.projects[0].id; filter = ""; save(); render();
 };
 
@@ -679,7 +777,8 @@ $("notif").onclick = () => {
   Promise.resolve(Notification.requestPermission()).then(() => { updateNotif(); renderAlert(); notifyOnce(); }).catch(() => {});
 };
 
-load(); render(); notifyOnce();
+load(); render(); notifyOnce(); fillSync();
+if(syncCfg().token && syncCfg().auto !== false) syncNow(); // 開いたときに自動で同期
 // アプリとしてインストールできるように、オフライン用の仕組みを登録する（http/https のときだけ）
 if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
