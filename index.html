@@ -96,11 +96,15 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
 .glate{outline:2px solid #C0392B}
 /* タブ（ボード / スケジュール / 進み具合）の見た目と、タブごとの表示切り替え */
 .tabs{display:flex;gap:6px;padding:0 12px 8px}
-.tabs button{flex:1;border-radius:99px}
+.tabs button{flex:1;border-radius:99px;padding:8px 4px;white-space:nowrap}
 .tabs button.on{background:var(--ac);color:var(--on);border-color:var(--ac);font-weight:700}
-#vGantt,#vStats,#vSet{display:none}
-body[data-tab=gantt] #vGantt,body[data-tab=stats] #vStats,body[data-tab=set] #vSet{display:block}
-body[data-tab=set] :is(#chips,#tools,#board,#feedBox,#cd){display:none}
+#vGantt,#vStats,#vSet,#vDiary{display:none}
+body[data-tab=gantt] #vGantt,body[data-tab=stats] #vStats,body[data-tab=set] #vSet,body[data-tab=diary] #vDiary{display:block}
+body[data-tab=set] :is(#chips,#tools,#board,#feedBox,#cd),body[data-tab=diary] :is(#chips,#tools,#board,#feedBox,#cd){display:none}
+/* 日記：月ごとの折りたたみと、日記カード */
+.dmonth{margin-top:8px}.dmonth>summary{cursor:pointer;font-weight:700;padding:6px 0}
+.dcard{background:var(--card);border:1px solid var(--bd);border-radius:calc(var(--r) - 4px);padding:10px 12px;margin:6px 0;cursor:pointer}
+.dbody{white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;font-size:14px;color:var(--sub);margin-top:2px}
 /* 設定の中の小タブ（一般 / 編集 / データ） */
 .pane{display:none}.pane.on{display:block}
 body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#tools,#board){display:none}
@@ -116,7 +120,7 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
   <a id="spec" class="btn" target="_blank" rel="noopener" hidden>仕様書を開く</a>
   <button id="syncBadge" class="tag" hidden></button>
 </header>
-<nav class="tabs" id="tabs"><button data-tab="board">ボード</button><button data-tab="gantt">スケジュール</button><button data-tab="stats">進み具合</button><button data-tab="set">設定</button></nav>
+<nav class="tabs" id="tabs"><button data-tab="board">ボード</button><button data-tab="gantt">スケジュール</button><button data-tab="stats">進み具合</button><button data-tab="diary">日記</button><button data-tab="set">設定</button></nav>
 <div class="chips" id="chips"></div>
 <div class="row" id="tools" style="padding:0 12px 4px"><button class="pri" id="add">＋ タスクを追加</button><button id="hd"></button></div>
 <section class="box" id="bk" hidden></section>
@@ -128,6 +132,11 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
 
 <section class="box" id="feedBox"><h3>更新フィード</h3><ul id="feed"></ul></section>
 
+<section class="box" id="vDiary">
+  <div class="row"><h3 style="margin:0;flex:1">日記（制作日誌）</h3><button id="dAdd" class="pri">＋ 日記を書く</button></div>
+  <input id="dq" type="search" placeholder="日記を検索" style="margin-top:8px">
+  <div id="diaryList" style="margin-top:8px"></div>
+</section>
 <section class="box" id="vSet">
   <nav class="tabs" id="stabs" style="padding:0 0 8px"><button data-stab="gen">一般</button><button data-stab="edit">編集</button><button data-stab="data">データ</button></nav>
 
@@ -190,6 +199,13 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
   </div>
 </section>
 
+<dialog id="ddlg">
+  <p class="lb">日付</p><input id="dDate" type="date">
+  <p class="lb">見出し</p><input id="dTitle" placeholder="例：ジャンプの挙動がやっと直った">
+  <p class="lb">内容</p><textarea id="dBody" rows="9"></textarea>
+  <p class="err" id="dErr"></p>
+  <div class="row"><button class="pri" id="dSave">保存</button><button id="dCancel">キャンセル</button><button id="dTasks">この日の完了タスクを挿入</button><button id="dDel">削除</button></div>
+</dialog>
 <dialog id="dlg">
   <p class="lb">タスク名</p><input id="fTitle">
   <p class="lb">カテゴリ</p><select id="fCat"></select>
@@ -328,7 +344,7 @@ function render(){
   $("cnt").textContent = `(${p.members.length}/${MAX_MEMBERS})`;
   $("mem").innerHTML = p.members.map(m => `<div class="row" style="margin:2px 0">${dot(p,m.id)} ${esc(m.name)} <button data-rm="${m.id}" aria-label="${esc(m.name)}を削除">削除</button></div>`).join("");
   $("me").innerHTML = opts([["","未選択"], ...p.members.map(m => [m.name, m.name])], db.me);
-  renderAlert(); updateNotif(); renderReport(); renderMs(); backupNote(); renderTrash(); if(tab === "gantt") renderGantt(); renderTpl(); applyTab(); applyStab();
+  renderAlert(); updateNotif(); renderReport(); renderMs(); backupNote(); renderTrash(); if(tab === "gantt") renderGantt(); if(tab === "diary") renderDiary(); renderTpl(); applyTab(); applyStab();
   // 個人/チームで表示を切り替える
   $("pMode").innerHTML = opts([["team","チーム"],["solo","個人"]], p.mode || "team");
   $("feedOn").checked = p.feedOn !== false;
@@ -561,7 +577,7 @@ $("phSave").onclick = () => { const l = parseList($("phIn").value); if(!l.length
 const syncCfg = () => { try { return JSON.parse(get("gtm-sync")) || {}; } catch(e) { return {}; } }; // ユーザー名・リポジトリ名・トークンはこの端末だけに保存
 // ゴミ箱の自動削除：削除から30日たったタスクを、データから完全に消す
 const TRASH_DAYS = 30;
-function purgeTrash(){ const lim = Date.now() - TRASH_DAYS * 864e5; db.projects.forEach(p => { p.tasks = p.tasks.filter(t => !(t.deleted && (t.updatedAt || 0) < lim)); }); }
+function purgeTrash(){ const lim = Date.now() - TRASH_DAYS * 864e5; db.projects.forEach(p => { p.tasks = p.tasks.filter(t => !(t.deleted && (t.updatedAt || 0) < lim)); p.diary = (p.diary || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim)); }); }
 // トークンの期限まで何日か（メモが無ければ null）
 const expDays = () => { const c = syncCfg(); return c.exp ? Math.ceil((new Date(c.exp + "T23:59:59") - new Date()) / 864e5) : null; };
 // ヘッダーの同期バッジ（状態：busy=同期中 / ok=同期済み / wait=同期待ち / warn=期限が近い / err=失敗）
@@ -593,7 +609,7 @@ function mergeDb(a, b){ // a=この端末、b=クラウド
   out.projects.forEach(p => {
     p.members = p.members.filter(m => !gone[m.id]); p.milestones = (p.milestones || []).filter(m => !gone[m.id]);
     const o = older.projects.find(x => x.id === p.id); if(!o) return;
-    p.tasks = byTime(p.tasks, o.tasks); // タスクは1件ずつ、メンバーと目標は両方を合わせる
+    p.tasks = byTime(p.tasks, o.tasks); p.diary = byTime(p.diary || [], o.diary || []); // タスクと日記は1件ずつ // タスクは1件ずつ、メンバーと目標は両方を合わせる
     p.members = union(o.members, p.members); p.milestones = union(o.milestones || [], p.milestones || []);
     const seen = new Set(); // 更新フィードは両方を合わせて、重複を消して新しい順に100件
     p.feed = [...p.feed, ...o.feed].filter(f => { const k = f.t + f.who + f.text; return seen.has(k) ? false : seen.add(k); }).sort((x, y) => y.t - x.t).slice(0, 100);
@@ -637,6 +653,49 @@ $("syNow").onclick = () => syncNow();
 // スマホとパソコンを行き来してアプリに戻ったときも、最新を取り込む
 document.addEventListener("visibilitychange", () => { if(!document.hidden && syncCfg().token && syncCfg().auto !== false) syncNow(); });
 
+// ===== 日記（制作日誌）：プロジェクトごと、月ごとに折りたたんで表示 =====
+let diaryOpen = {}, editingD = null; // 月ごとの開閉の記憶 / 編集中の日記
+const WD = ["日","月","火","水","木","金","土"];
+function renderDiary(){
+  const p = cur(), q = $("dq").value.trim().toLowerCase(), cm = ymd(new Date()).slice(0, 7);
+  const list = (p.diary || []).filter(d => !d.deleted && (!q || (d.title + " " + d.body).toLowerCase().includes(q)))
+    .sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || 0) - (a.updatedAt || 0));
+  const months = [...new Set(list.map(d => d.date.slice(0, 7)))]; // 新しい月から順に
+  $("diaryList").innerHTML = months.map(m => {
+    const items = list.filter(d => d.date.startsWith(m)), open = q || (m in diaryOpen ? diaryOpen[m] : m === cm); // 今月だけ最初は開く。検索中は全部開く
+    return `<details class="dmonth" data-m="${m}"${open ? " open" : ""}><summary>${m.slice(0, 4)}年${+m.slice(5)}月（${items.length}件）</summary>` +
+      items.map(d => `<div class="dcard" data-did="${d.id}" tabindex="0" role="button" aria-label="${esc(d.title)}を編集"><div class="sub">${esc(d.date)}（${WD[new Date(d.date + "T00:00:00").getDay()]}）</div><b>${esc(d.title || "（見出しなし）")}</b><div class="dbody">${esc(d.body)}</div></div>`).join("") + `</details>`;
+  }).join("") || `<p class="sub">${q ? "見つからなかったよ" : "まだ日記がないよ。「日記を書く」から、今日のことを残そう。"}</p>`;
+}
+// 日記の編集画面を開く（id が無ければ新しい日記）
+function openDiary(id){
+  const d = (cur().diary || []).find(x => x.id === id);
+  editingD = d || {id:uid(), date:ymd(new Date()), title:"", body:"", isNew:true};
+  $("dDate").value = editingD.date; $("dTitle").value = editingD.title; $("dBody").value = editingD.body;
+  $("dErr").textContent = ""; $("dDel").hidden = !!editingD.isNew; $("ddlg").showModal();
+}
+$("dAdd").onclick = () => openDiary();
+$("diaryList").onclick = e => { const c = e.target.closest("[data-did]"); if(c) openDiary(c.dataset.did); };
+$("diaryList").onkeydown = e => { if((e.key === "Enter" || e.key === " ") && e.target.dataset.did){ e.preventDefault(); openDiary(e.target.dataset.did); } };
+$("diaryList").addEventListener("toggle", e => { if(e.target.dataset.m) diaryOpen[e.target.dataset.m] = e.target.open; }, true); // 月の開閉を覚えておく
+$("dq").oninput = renderDiary; // 入力するたびに絞り込む
+// 「この日に完了したタスク」を本文の最後に書き足す
+$("dTasks").onclick = () => {
+  const day = $("dDate").value, done = cur().tasks.filter(t => !t.deleted && t.status === "done" && t.updatedAt && ymd(new Date(t.updatedAt)) === day);
+  if(!done.length){ $("dErr").textContent = "この日に完了したタスクはないよ"; return; }
+  const b = $("dBody"); $("dErr").textContent = "";
+  b.value += (b.value && !b.value.endsWith("\n") ? "\n" : "") + "【完了したタスク】\n" + done.map(t => "・" + t.title).join("\n");
+};
+$("dSave").onclick = () => {
+  const date = $("dDate").value, title = $("dTitle").value.trim(), body = $("dBody").value;
+  if(!date || (!title && !body.trim())){ $("dErr").textContent = "日付と、見出しか内容を入れてね"; return; }
+  const p = cur(), d = editingD; Object.assign(d, {date, title, body, updatedAt:Date.now(), updatedBy:db.me || ""});
+  if(d.isNew){ delete d.isNew; (p.diary = p.diary || []).push(d); }
+  $("ddlg").close(); commit(); // 日記の変更は更新フィードには流さない
+};
+$("dCancel").onclick = () => $("ddlg").close();
+$("dDel").onclick = () => { editingD.deleted = true; editingD.updatedAt = Date.now(); $("ddlg").close(); commit(); }; // 削除は「消した印」を付けるだけ（30日後に完全削除）
+
 // ===== 設定の中の小タブ（一般 / 編集 / データ） =====
 let stab = get("gtm-stab") || "gen"; // 最後に見た小タブを覚えておく
 function applyStab(){
@@ -654,7 +713,7 @@ function applyTab(){
 $("tabs").onclick = e => {
   const b = e.target.closest("[data-tab]"); if(!b) return;
   tab = b.dataset.tab; set("gtm-tab", tab); applyTab();
-  if(tab === "gantt") renderGantt(); // 表示されたときに幅を測り直す
+  if(tab === "gantt") renderGantt(); if(tab === "diary") renderDiary(); // 表示されたときに幅を測り直す・日記を描く
 };
 addEventListener("resize", () => { if(tab === "gantt") renderGantt(); });
 
