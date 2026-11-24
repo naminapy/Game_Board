@@ -1,6 +1,6 @@
 // オフラインでも開けるようにするための「サービスワーカー」
 // 通信できるときは最新のファイルを取って保存し、通信できないときは保存しておいたものを出す
-const CACHE = "game-board-v2";
+const CACHE = "game-board-v3";
 
 // 最初にインストールされるとき：基本のファイルを保存しておく
 self.addEventListener("install", e => {
@@ -19,7 +19,7 @@ self.addEventListener("fetch", e => {
   // 他のサイト（GitHubのAPIなど）への通信は、データを保存しないようにそのまま通す
   if (new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, {cache: "no-cache"}) // ブラウザの一時保存を使わず、毎回サーバーに最新か確認する
       .then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {}); return r; })
       .catch(() => caches.match(e.request))
   );
