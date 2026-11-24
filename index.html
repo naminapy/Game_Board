@@ -46,6 +46,26 @@ button.pri{background:var(--ac);color:var(--on);border-color:var(--ac);font-weig
 /* 真ん中のボード（横スクロール）と担当者ボタンの列も、同じように細く薄くする */
 .board,.chips{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--sub) 35%,transparent) transparent}
 .board:hover,.chips:hover{scrollbar-color:var(--sub) transparent}
+/* スクロールバーはどこでも同じデザインに統一（細く・薄く、触れると濃く） */
+*{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--sub) 35%,transparent) transparent}
+.gantt:hover,textarea:hover,dialog:hover,#diaryList:hover{scrollbar-color:var(--sub) transparent}
+/* カレンダー：テーマの色をとりつつ、見出しと今日を少し強調して存在感を出す */
+.seg2{display:flex;gap:4px}
+.khead{display:flex;align-items:center;gap:8px;margin:8px 0}.khead b{flex:1;text-align:center;font-size:16px}
+.kgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border:1px solid var(--bd);border-radius:calc(var(--r) - 4px);overflow:hidden;background:var(--card);box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.kw{text-align:center;font-size:12px;font-weight:700;padding:6px 0;background:color-mix(in srgb,var(--ac) 22%,var(--card));border-bottom:1px solid var(--bd)}
+.kw.su{color:color-mix(in srgb,#E05555 75%,var(--tx))}.kw.sa{color:color-mix(in srgb,#4A86D8 75%,var(--tx))}
+.kc{min-height:72px;padding:3px;border-right:1px solid var(--bd);border-bottom:1px solid var(--bd);cursor:pointer;overflow:hidden;min-width:0}
+.kc:nth-child(7n){border-right:0}
+.kc.out{opacity:.45}.kc.wk{background:color-mix(in srgb,var(--sub) 7%,transparent)}
+.kc.today{background:color-mix(in srgb,var(--ac) 20%,var(--card));box-shadow:inset 0 0 0 2px var(--ac)}
+.kc.sel{outline:2px solid var(--tx);outline-offset:-2px}
+.kn{font-size:12px;font-weight:700}
+.kev{font-size:10px;line-height:1.35;border-radius:4px;padding:0 3px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#222}
+.kev.flag{background:var(--ac);color:var(--on)}.kev.tk{background:var(--panel);color:var(--tx);border:1px solid var(--bd)}
+.kmore{font-size:10px;color:var(--sub)}
+.kd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--bd);cursor:pointer}
+@media(min-width:700px){.kc{min-height:96px}.kev{font-size:12px}}
 @media(min-width:900px){.col{flex:1 1 0;max-width:none}}
 .col h3{margin:0 0 8px;font-size:15px;display:flex;justify-content:space-between}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:calc(var(--r) - 4px);padding:10px;margin-bottom:8px;cursor:pointer}
@@ -127,7 +147,15 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
 <section class="box" id="alert" hidden></section>
 <section class="box" id="cd"></section>
 <div class="board" id="board"></div>
-<section class="box" id="vGantt"><h3>スケジュール</h3><p class="sub">バーを押すと編集。点線は目標、実線は今日、赤い枠は期限切れ。</p><div class="gantt" id="gantt"></div></section>
+<section class="box" id="vGantt"><div class="row"><h3 style="margin:0;flex:1">スケジュール</h3><div class="seg2" id="gsw"><button class="chip" data-g="gantt">ガント</button><button class="chip" data-g="cal">カレンダー</button></div></div>
+<div id="ganttView"><p class="sub">バーを押すと編集。点線は目標、実線は今日、赤い枠は期限切れ。</p><div class="gantt" id="gantt"></div></div>
+<div id="calView" hidden>
+  <div class="khead" id="calHead"></div>
+  <div class="chips" id="calWho" style="padding:0 0 8px"></div>
+  <div class="kgrid" id="calGrid"></div>
+  <label class="sub" style="display:block;margin-top:6px"><input type="checkbox" id="calTk"> タスクの期限も表示</label>
+  <div class="sec" id="calDay"></div>
+</div></section>
 <section class="box" id="vStats"><div class="row"><h3 style="margin:0;flex:1">進み具合</h3><button id="png">PNGで保存</button><button id="pdf">PDFで保存</button></div><div id="charts"></div><span class="sub" id="repMsg"></span></section>
 
 <section class="box" id="feedBox"><h3>更新フィード</h3><ul id="feed"></ul></section>
@@ -171,6 +199,11 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
     <div class="sec"><h4>工程（フェーズ）</h4><p class="sub">「,」で区切って入力（最大12個）</p>
       <div class="row"><input id="phIn"><button id="phSave">保存</button></div>
     </div>
+    <div class="sec"><h4>予定の項目（カレンダー）</h4><p class="sub">「,」で区切って入力。チームでは、「見せる項目」以外は他のメンバーに「予定あり」とだけ見えるよ。</p>
+      <p class="lb">項目</p><input id="evCatIn">
+      <p class="lb">内容を他の人にも見せる項目</p><input id="evShowIn">
+      <div class="row" style="margin-top:8px"><button id="evSave">保存</button></div>
+    </div>
     <div class="sec teamOnly"><h4>メンバー <span id="cnt"></span></h4><div id="mem"></div>
       <div class="row"><input id="newM" placeholder="名前"><button id="addM">追加</button></div>
     </div>
@@ -199,6 +232,18 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
   </div>
 </section>
 
+<dialog id="edlg">
+  <div id="eMemBox"><p class="lb">誰の予定</p><select id="eMem"></select></div>
+  <p class="lb">タイトル</p><input id="eTitle" placeholder="例：通院">
+  <p class="lb">項目</p><select id="eCat"></select>
+  <p class="lb">日付</p><input id="eDate" type="date">
+  <p class="lb">終了日（複数日のときだけ）</p><input id="eEnd" type="date">
+  <label class="sub"><input type="checkbox" id="eAll"> 終日</label>
+  <div id="eTime"><p class="lb">時間</p><div class="row"><input id="eS" type="time"><input id="eE" type="time"></div></div>
+  <p class="lb">他のメンバーへの見せ方</p><select id="eShow"></select>
+  <p class="err" id="eErr"></p>
+  <div class="row"><button class="pri" id="eSave">保存</button><button id="eCancel">キャンセル</button><button id="eDel">削除</button></div>
+</dialog>
 <dialog id="ddlg">
   <p class="lb">日付</p><input id="dDate" type="date">
   <p class="lb">見出し</p><input id="dTitle" placeholder="例：ジャンプの挙動がやっと直った">
@@ -344,7 +389,7 @@ function render(){
   $("cnt").textContent = `(${p.members.length}/${MAX_MEMBERS})`;
   $("mem").innerHTML = p.members.map(m => `<div class="row" style="margin:2px 0">${dot(p,m.id)} ${esc(m.name)} <button data-rm="${m.id}" aria-label="${esc(m.name)}を削除">削除</button></div>`).join("");
   $("me").innerHTML = opts([["","未選択"], ...p.members.map(m => [m.name, m.name])], db.me);
-  renderAlert(); updateNotif(); renderReport(); renderMs(); backupNote(); renderTrash(); if(tab === "gantt") renderGantt(); if(tab === "diary") renderDiary(); renderTpl(); applyTab(); applyStab();
+  renderAlert(); updateNotif(); renderReport(); renderMs(); backupNote(); renderTrash(); if(tab === "gantt") renderSched(); if(tab === "diary") renderDiary(); renderTpl(); applyTab(); applyStab();
   // 個人/チームで表示を切り替える
   $("pMode").innerHTML = opts([["team","チーム"],["solo","個人"]], p.mode || "team");
   $("feedOn").checked = p.feedOn !== false;
@@ -353,6 +398,7 @@ function render(){
   $("whoBox").hidden = solo;
   $("pName").value = p.name;
   $("catIn").value = catsOf(p).join(", "); $("phIn").value = phasesOf(p).join(", ");
+  $("evCatIn").value = evCats(p).join(", "); $("evShowIn").value = evShow(p).join(", ");
   $("delP").disabled = db.projects.length < 2; // 最後の1つは消せない
   delArm = false; $("delMsg").textContent = "";
   $("hd").textContent = hideDone ? `完了を表示する（${p.tasks.filter(t => !t.deleted && t.status === "done").length}件）` : "完了を隠す";
@@ -577,7 +623,7 @@ $("phSave").onclick = () => { const l = parseList($("phIn").value); if(!l.length
 const syncCfg = () => { try { return JSON.parse(get("gtm-sync")) || {}; } catch(e) { return {}; } }; // ユーザー名・リポジトリ名・トークンはこの端末だけに保存
 // ゴミ箱の自動削除：削除から30日たったタスクを、データから完全に消す
 const TRASH_DAYS = 30;
-function purgeTrash(){ const lim = Date.now() - TRASH_DAYS * 864e5; db.projects.forEach(p => { p.tasks = p.tasks.filter(t => !(t.deleted && (t.updatedAt || 0) < lim)); p.diary = (p.diary || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim)); }); }
+function purgeTrash(){ const lim = Date.now() - TRASH_DAYS * 864e5; db.projects.forEach(p => { p.tasks = p.tasks.filter(t => !(t.deleted && (t.updatedAt || 0) < lim)); p.diary = (p.diary || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim)); p.events = (p.events || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim)); }); }
 // トークンの期限まで何日か（メモが無ければ null）
 const expDays = () => { const c = syncCfg(); return c.exp ? Math.ceil((new Date(c.exp + "T23:59:59") - new Date()) / 864e5) : null; };
 // ヘッダーの同期バッジ（状態：busy=同期中 / ok=同期済み / wait=同期待ち / warn=期限が近い / err=失敗）
@@ -609,7 +655,7 @@ function mergeDb(a, b){ // a=この端末、b=クラウド
   out.projects.forEach(p => {
     p.members = p.members.filter(m => !gone[m.id]); p.milestones = (p.milestones || []).filter(m => !gone[m.id]);
     const o = older.projects.find(x => x.id === p.id); if(!o) return;
-    p.tasks = byTime(p.tasks, o.tasks); p.diary = byTime(p.diary || [], o.diary || []); // タスクと日記は1件ずつ // タスクは1件ずつ、メンバーと目標は両方を合わせる
+    p.tasks = byTime(p.tasks, o.tasks); p.diary = byTime(p.diary || [], o.diary || []); p.events = byTime(p.events || [], o.events || []); // タスクと日記は1件ずつ // タスクは1件ずつ、メンバーと目標は両方を合わせる
     p.members = union(o.members, p.members); p.milestones = union(o.milestones || [], p.milestones || []);
     const seen = new Set(); // 更新フィードは両方を合わせて、重複を消して新しい順に100件
     p.feed = [...p.feed, ...o.feed].filter(f => { const k = f.t + f.who + f.text; return seen.has(k) ? false : seen.add(k); }).sort((x, y) => y.t - x.t).slice(0, 100);
@@ -652,6 +698,89 @@ $("syncBadge").onclick = () => { tab = "set"; stab = "data"; set("gtm-tab", tab)
 $("syNow").onclick = () => syncNow();
 // スマホとパソコンを行き来してアプリに戻ったときも、最新を取り込む
 document.addEventListener("visibilitychange", () => { if(!document.hidden && syncCfg().token && syncCfg().auto !== false) syncNow(); });
+
+// ===== メンバーの予定カレンダー（スケジュールタブの中で、ガントと切り替え） =====
+const EV_CATS = ["私用","病院","授業","バイト","制作","その他"], EV_SHOW = ["制作"]; // 標準の項目と、他の人にも内容を見せる項目
+const evCats = p => p.evCats && p.evCats.length ? p.evCats : EV_CATS, evShow = p => p.evShow || EV_SHOW;
+const meId = p => (p.members.find(m => m.name === db.me) || {}).id; // 「あなたの名前」に対応するメンバーID
+const memColor = (p, id) => { const i = p.members.findIndex(m => m.id === id); return COLORS[(i < 0 ? 3 : i) % COLORS.length]; };
+// 予定の内容を見せていいか：個人モード・自分の予定・「見せる」指定・項目の設定の順で決める。それ以外は「予定あり」だけ
+function evDetail(p, e){
+  if(p.mode === "solo" || (e.memberId && e.memberId === meId(p)) || e.show === "detail") return true;
+  return e.show === "busy" ? false : evShow(p).includes(e.cat);
+}
+const evTime = e => e.allDay ? "終日" : (e.start || "") + (e.end ? "–" + e.end : "");
+let gmode = get("gtm-gmode") || "gantt", calCur = new Date(), calDay = "", calSel = new Set(), calTasks = get("gtm-caltasks") !== "0", editingE = null;
+calCur.setDate(1);
+// その日にある予定（複数日の予定も含む。メンバーを選んでいればその人だけ）
+const evOn = (p, ds) => (p.events || []).filter(e => !e.deleted && e.date <= ds && ds <= (e.endDate || e.date) && (!calSel.size || calSel.has(e.memberId)))
+  .sort((a, b) => (a.allDay ? "" : a.start || "~").localeCompare(b.allDay ? "" : b.start || "~"));
+function applyG(){
+  $("ganttView").hidden = gmode !== "gantt"; $("calView").hidden = gmode !== "cal";
+  document.querySelectorAll("#gsw button").forEach(b => b.classList.toggle("on", b.dataset.g === gmode));
+}
+function renderSched(){ applyG(); gmode === "cal" ? renderCal() : renderGantt(); }
+function renderCal(){
+  const p = cur(), solo = p.mode === "solo", y = calCur.getFullYear(), m = calCur.getMonth(), today = ymd(new Date());
+  if(!calDay) calDay = today; // 最初は今日を選んでおく
+  const lead = new Date(y, m, 1).getDay(), weeks = Math.ceil((lead + new Date(y, m + 1, 0).getDate()) / 7);
+  $("calHead").innerHTML = `<button data-cal="-1" aria-label="前の月">◀</button><b>${y}年${m + 1}月</b><button data-cal="1" aria-label="次の月">▶</button><button data-cal="0">今日</button>`;
+  $("calWho").innerHTML = solo ? "" : `<button class="chip${calSel.size ? "" : " on"}" data-who="">全員</button>` + p.members.map(mm => `<button class="chip${calSel.has(mm.id) ? " on" : ""}" data-who="${mm.id}">${dot(p, mm.id)} ${esc(mm.name)}</button>`).join("");
+  $("calTk").checked = calTasks;
+  let cells = WD.map((w, i) => `<div class="kw${i === 0 ? " su" : i === 6 ? " sa" : ""}">${w}</div>`).join("");
+  for(let i = 0; i < weeks * 7; i++){
+    const d = new Date(y, m, 1 - lead + i), ds = ymd(d);
+    const items = [ ...(p.milestones || []).filter(x => x.date === ds).map(x => `<div class="kev flag">⚑ ${esc(x.name)}</div>`),
+      ...evOn(p, ds).map(e => `<div class="kev" style="background:${memColor(p, e.memberId)}">${esc(evDetail(p, e) ? e.title : "予定あり")}</div>`),
+      ...(calTasks ? p.tasks.filter(t => !t.deleted && t.due === ds && t.status !== "done").map(t => `<div class="kev tk">◆ ${esc(t.title)}</div>`) : []) ];
+    cells += `<div class="kc${d.getMonth() !== m ? " out" : ""}${[0, 6].includes(d.getDay()) ? " wk" : ""}${ds === today ? " today" : ""}${ds === calDay ? " sel" : ""}" data-day="${ds}"><span class="kn">${d.getDate()}</span>${items.slice(0, 3).join("")}${items.length > 3 ? `<div class="kmore">+${items.length - 3}</div>` : ""}</div>`;
+  }
+  $("calGrid").innerHTML = cells;
+  // 選んだ日の一覧
+  const evs = evOn(p, calDay), tks = p.tasks.filter(t => !t.deleted && t.due === calDay && t.status !== "done");
+  $("calDay").innerHTML = `<h4>${calDay}（${WD[new Date(calDay + "T00:00:00").getDay()]}）</h4>` +
+    (p.milestones || []).filter(x => x.date === calDay).map(x => `<div class="kd" style="cursor:default">⚑ <b>${esc(x.name)}</b> <span class="sub">目標の日</span></div>`).join("") +
+    evs.map(e => `<div class="kd" data-eid="${e.id}">${solo ? "" : dot(p, e.memberId)} <span class="sub">${evTime(e)}</span> ${evDetail(p, e) ? `<b>${esc(e.title)}</b> <span class="tag">${esc(e.cat)}</span>` : "<b>予定あり</b>"}</div>`).join("") +
+    tks.map(t => `<div class="kd" style="cursor:default">◆ ${esc(t.title)} <span class="sub">タスクの期限</span></div>`).join("") +
+    `<button id="evAdd" class="pri" style="margin-top:8px">＋ この日に予定を追加</button>`;
+}
+$("gsw").onclick = e => { const b = e.target.closest("[data-g]"); if(!b) return; gmode = b.dataset.g; set("gtm-gmode", gmode); renderSched(); };
+$("calHead").onclick = e => { const b = e.target.closest("[data-cal]"); if(!b) return; const v = +b.dataset.cal;
+  if(v === 0){ calCur = new Date(); calCur.setDate(1); calDay = ymd(new Date()); } else calCur = new Date(calCur.getFullYear(), calCur.getMonth() + v, 1); renderCal(); };
+$("calWho").onclick = e => { const b = e.target.closest("[data-who]"); if(!b) return; const id = b.dataset.who;
+  if(!id) calSel.clear(); else if(calSel.has(id)) calSel.delete(id); else calSel.add(id); renderCal(); }; // 複数選べる。「全員」でリセット
+$("calGrid").onclick = e => { const c = e.target.closest("[data-day]"); if(c){ calDay = c.dataset.day; renderCal(); } };
+$("calTk").onchange = e => { calTasks = e.target.checked; set("gtm-caltasks", calTasks ? "1" : "0"); renderCal(); };
+$("calDay").onclick = e => { if(e.target.id === "evAdd") return openEv(); const r = e.target.closest("[data-eid]"); if(r) openEv(r.dataset.eid); };
+// 予定の編集画面（内容が見えない人の予定は開かない）
+function openEv(id){
+  const p = cur(), e = (p.events || []).find(x => x.id === id);
+  if(e && !evDetail(p, e)) return;
+  editingE = e || {id:uid(), memberId:meId(p) || "", date:calDay, endDate:"", allDay:true, start:"", end:"", title:"", cat:evCats(p)[0], show:"", isNew:true};
+  $("eMem").innerHTML = opts(p.members.map(m => [m.id, m.name]), editingE.memberId); $("eMemBox").hidden = p.mode === "solo";
+  $("eCat").innerHTML = opts([...new Set([...evCats(p), editingE.cat])].map(c => [c, c]), editingE.cat);
+  $("eShow").innerHTML = opts([["", "項目の設定に従う"], ["detail", "内容を見せる"], ["busy", "予定ありだけ"]], editingE.show || "");
+  $("eDate").value = editingE.date; $("eEnd").value = editingE.endDate || ""; $("eAll").checked = !!editingE.allDay;
+  $("eS").value = editingE.start || ""; $("eE").value = editingE.end || ""; $("eTitle").value = editingE.title;
+  $("eErr").textContent = ""; $("eDel").hidden = !!editingE.isNew; $("eTime").hidden = $("eAll").checked; $("edlg").showModal();
+}
+$("eAll").onchange = () => { $("eTime").hidden = $("eAll").checked; };
+$("eSave").onclick = () => {
+  const date = $("eDate").value, end = $("eEnd").value, title = $("eTitle").value.trim();
+  if(!date || !title){ $("eErr").textContent = "日付とタイトルを入れてね"; return; }
+  if(end && end < date){ $("eErr").textContent = "終了日は開始日より後にしてね"; return; }
+  const p = cur(), e = editingE, all = $("eAll").checked;
+  Object.assign(e, {memberId: p.mode === "solo" ? "" : $("eMem").value, date, endDate:end, allDay:all, start: all ? "" : $("eS").value, end: all ? "" : $("eE").value, title, cat:$("eCat").value, show:$("eShow").value, updatedAt:Date.now(), updatedBy:db.me || ""});
+  if(e.isNew){ delete e.isNew; (p.events = p.events || []).push(e); }
+  calDay = date; $("edlg").close(); commit(); // プライベートな予定なので、更新フィードには流さない
+};
+$("eCancel").onclick = () => $("edlg").close();
+$("eDel").onclick = () => { editingE.deleted = true; editingE.updatedAt = Date.now(); $("edlg").close(); commit(); };
+// 予定の項目の設定（「内容を見せる項目」は項目の中から選ぶ）
+$("evSave").onclick = () => {
+  const l = parseList($("evCatIn").value), s = parseList($("evShowIn").value).filter(x => l.includes(x)); if(!l.length) return;
+  const p = cur(); p.evCats = l; p.evShow = s; commit("予定の項目を変更");
+};
 
 // ===== 日記（制作日誌）：プロジェクトごと、月ごとに折りたたんで表示 =====
 let diaryOpen = {}, editingD = null; // 月ごとの開閉の記憶 / 編集中の日記
@@ -713,7 +842,7 @@ function applyTab(){
 $("tabs").onclick = e => {
   const b = e.target.closest("[data-tab]"); if(!b) return;
   tab = b.dataset.tab; set("gtm-tab", tab); applyTab();
-  if(tab === "gantt") renderGantt(); if(tab === "diary") renderDiary(); // 表示されたときに幅を測り直す・日記を描く
+  if(tab === "gantt") renderSched(); if(tab === "diary") renderDiary(); // 表示されたときに幅を測り直す・日記を描く
 };
 addEventListener("resize", () => { if(tab === "gantt") renderGantt(); });
 
