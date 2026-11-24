@@ -78,6 +78,10 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
 .sec .bar{background:var(--panel)}
 .legend{margin-top:4px}
 .more{width:100%;margin-top:4px}
+/* 同期の状態を示すバッジ（ヘッダーに出る） */
+#syncBadge{cursor:pointer;background:var(--card);color:var(--tx);min-height:32px}
+#syncBadge[data-st=err],#syncBadge[data-st=warn]{background:#F7C1C1;color:#501313}
+#syncBadge[data-st=wait]{border-style:dashed}
 .crow span:last-child{text-align:right}
 /* ガント風スケジュール（横に日付、縦にタスク） */
 .gantt{overflow-x:auto}
@@ -110,6 +114,7 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
   <select id="prj" aria-label="プロジェクト"></select>
   <select id="thm" aria-label="テーマ"></select>
   <a id="spec" class="btn" target="_blank" rel="noopener" hidden>仕様書を開く</a>
+  <button id="syncBadge" class="tag" hidden></button>
 </header>
 <nav class="tabs" id="tabs"><button data-tab="board">ボード</button><button data-tab="gantt">スケジュール</button><button data-tab="stats">進み具合</button><button data-tab="set">設定</button></nav>
 <div class="chips" id="chips"></div>
@@ -168,8 +173,9 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
       <p class="lb">GitHubのユーザー名</p><input id="syOwner">
       <p class="lb">データ用リポジトリ名</p><input id="syRepo">
       <p class="lb">トークン（github_pat_ で始まるもの）</p><input id="syToken" type="password" autocomplete="off">
+      <p class="lb">トークンの期限（メモ。近づくとお知らせするよ）</p><input id="syExp" type="date"><p class="sub" id="syExpNote"></p>
       <label class="sub"><input type="checkbox" id="syAuto" checked> 開いたときと変更したときに自動で同期する</label>
-      <div class="row" style="margin-top:8px"><button id="sySave" class="pri">保存して同期</button><button id="syNow">今すぐ同期</button></div><p class="sub" id="syncMsg"></p>
+      <div class="row" style="margin-top:8px"><button id="sySave" class="pri">保存して同期</button><button id="syNow">今すぐ同期</button><button id="syClear">この端末のトークンを消す</button></div><p class="sub" id="syncMsg"></p>
     </div>
     <div class="sec"><h4>バックアップ</h4>
       <div class="row"><button id="expF">ファイルで保存</button><label class="btn" style="cursor:pointer">ファイルから読み込む<input id="impF" type="file" accept=".json,application/json" hidden></label></div>
@@ -180,7 +186,7 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
       <div class="row"><input id="tplName" placeholder="テンプレート名（例：アクションゲーム）"><button id="tplSave">保存</button></div>
       <div id="tplList"></div><span class="sub" id="tplMsg"></span>
     </div>
-    <div class="sec"><h4>ゴミ箱（削除したタスク）</h4><div id="trash"></div></div>
+    <div class="sec"><h4>ゴミ箱（削除したタスク）</h4><p class="sub">削除から30日たつと、自動で完全に消えるよ。</p><div id="trash"></div></div>
   </div>
 </section>
 
@@ -236,6 +242,7 @@ function load(){
   db = Store.read(); // 保存先は Store にまとめてある（後でフォルダ保存やオンライン保存に差し替えやすい）
   if(!db || !db.projects || !db.projects.length){ db = sample(); db.projects[0].tasks = []; db.projects[0].members = []; } // 最初は空のプロジェクトから始める
   db = migrate(db); // データの形を最新版にそろえる
+  purgeTrash(); // ゴミ箱の古いタスクを消す
   // 以前のサンプルを「わんだーすらいむ」に変える（手を加えていないサンプルの中身は空にする）
   const ST = ["ジャンプの挙動を調整","ステージ1のマップ作成","スライムの移動アニメ","集落のBGM案"], SM = ["ゆう","みく","けん"];
   db.projects.forEach(p => {
@@ -393,7 +400,7 @@ $("addM").onclick = () => {
 };
 $("mem").onclick = e => {
   const id = e.target.dataset.rm; if(!id) return;
-  const p = cur(); p.members = p.members.filter(m => m.id !== id);
+  const p = cur(); p.members = p.members.filter(m => m.id !== id); (db.gone = db.gone || {})[id] = Date.now();
   p.tasks.forEach(t => { if(t.assignee === id) t.assignee = ""; }); commit("メンバーを削除");
 };
 $("addP").onclick = () => {
@@ -496,7 +503,7 @@ $("msAdd").onclick = () => {
   const n = $("msName").value.trim(), d = $("msDate").value; if(!n || !d) return;
   const p = cur(); (p.milestones = p.milestones || []).push({id:uid(), name:n, date:d}); $("msName").value = ""; commit(`目標「${n}」（${d}）を追加`);
 };
-$("msList").onclick = e => { const id = e.target.dataset.msrm; if(!id) return; const p = cur(); p.milestones = p.milestones.filter(m => m.id !== id); commit("目標を削除"); };
+$("msList").onclick = e => { const id = e.target.dataset.msrm; if(!id) return; const p = cur(); p.milestones = p.milestones.filter(m => m.id !== id); (db.gone = db.gone || {})[id] = Date.now(); commit("目標を削除"); };
 
 // 画像(PNG)とPDFの書き出し：レポートを<canvas>に絵として描いて、それを保存する
 function drawReport(){
@@ -552,7 +559,20 @@ $("phSave").onclick = () => { const l = parseList($("phIn").value); if(!l.length
 
 // ===== クラウド同期（GitHubの非公開リポジトリの data.json に保存して、端末間で共有） =====
 const syncCfg = () => { try { return JSON.parse(get("gtm-sync")) || {}; } catch(e) { return {}; } }; // ユーザー名・リポジトリ名・トークンはこの端末だけに保存
-const setSyncMsg = t => { $("syncMsg").textContent = t; };
+// ゴミ箱の自動削除：削除から30日たったタスクを、データから完全に消す
+const TRASH_DAYS = 30;
+function purgeTrash(){ const lim = Date.now() - TRASH_DAYS * 864e5; db.projects.forEach(p => { p.tasks = p.tasks.filter(t => !(t.deleted && (t.updatedAt || 0) < lim)); }); }
+// トークンの期限まで何日か（メモが無ければ null）
+const expDays = () => { const c = syncCfg(); return c.exp ? Math.ceil((new Date(c.exp + "T23:59:59") - new Date()) / 864e5) : null; };
+// ヘッダーの同期バッジ（状態：busy=同期中 / ok=同期済み / wait=同期待ち / warn=期限が近い / err=失敗）
+const badge = (st, text) => { const b = $("syncBadge"); b.hidden = false; b.dataset.st = st; b.textContent = text; };
+const setSyncMsg = t => {
+  $("syncMsg").textContent = t;
+  const d = expDays(), warn = d !== null && d <= 7 ? "　⚠トークン期限" + (d < 0 ? "切れ" : "まで" + d + "日") : "";
+  if(t.startsWith("同期中")) badge("busy", "☁ 同期中…");
+  else if(t.startsWith("同期できたよ")) badge(warn ? "warn" : "ok", "☁ 同期済み " + new Date().toLocaleTimeString("ja-JP", {hour:"2-digit", minute:"2-digit"}) + warn);
+  else if(t.startsWith("同期できなかった")) badge("err", "☁ 同期できてない");
+};
 const b64dec = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g, "")), c => c.charCodeAt(0)));
 const b64enc = s => { let t = ""; new TextEncoder().encode(s).forEach(x => t += String.fromCharCode(x)); return btoa(t); };
 // GitHubに読み書きする（GET=読む、PUT=書く）
@@ -564,13 +584,17 @@ function mergeDb(a, b){ // a=この端末、b=クラウド
   const newer = (a.mtime || 0) >= (b.mtime || 0) ? a : b, older = newer === a ? b : a, copy = x => JSON.parse(JSON.stringify(x));
   const dead = new Set([...(a.deletedProjects || []), ...(b.deletedProjects || [])]);
   const out = copy(newer); out.deletedProjects = [...dead]; out.mtime = Math.max(a.mtime || 0, b.mtime || 0); out.me = a.me; out.current = a.current;
+  const gone = {...(b.gone || {}), ...(a.gone || {})}; out.gone = gone; // 消したメンバー・目標・テンプレートの「消した印」
+  const union = (older, newer) => { const m = new Map(); [...older, ...newer].forEach(i => m.set(i.id, i)); return [...m.values()].filter(i => !gone[i.id]); }; // 両方を合わせる（同じIDは新しいほう）
+  const byTime = (mine, other) => { const m = new Map(mine.map(i => [i.id, i])); other.forEach(i => { const x = m.get(i.id); if(!x || (i.updatedAt || 0) > (x.updatedAt || 0)) m.set(i.id, copy(i)); }); return [...m.values()]; }; // 1件ずつ、更新日時が新しいほうを残す
+  out.templates = union(older.templates || [], out.templates || []);
   older.projects.forEach(p => { if(!out.projects.some(x => x.id === p.id)) out.projects.push(copy(p)); });
   out.projects = out.projects.filter(p => !dead.has(p.id));
   out.projects.forEach(p => {
+    p.members = p.members.filter(m => !gone[m.id]); p.milestones = (p.milestones || []).filter(m => !gone[m.id]);
     const o = older.projects.find(x => x.id === p.id); if(!o) return;
-    const m = new Map(p.tasks.map(t => [t.id, t]));
-    o.tasks.forEach(t => { const x = m.get(t.id); if(!x || (t.updatedAt || 0) > (x.updatedAt || 0)) m.set(t.id, copy(t)); });
-    p.tasks = [...m.values()];
+    p.tasks = byTime(p.tasks, o.tasks); // タスクは1件ずつ、メンバーと目標は両方を合わせる
+    p.members = union(o.members, p.members); p.milestones = union(o.milestones || [], p.milestones || []);
     const seen = new Set(); // 更新フィードは両方を合わせて、重複を消して新しい順に100件
     p.feed = [...p.feed, ...o.feed].filter(f => { const k = f.t + f.who + f.text; return seen.has(k) ? false : seen.add(k); }).sort((x, y) => y.t - x.t).slice(0, 100);
   });
@@ -584,24 +608,31 @@ async function syncNow(retry = 1){
     if(r.status === 200){ const j = await r.json(); sha = j.sha; remote = JSON.parse(b64dec(j.content)); if(!isValid(remote)) throw new Error("クラウドのデータの形が違うよ"); remote = migrate(remote); }
     else if(r.status !== 404) throw new Error(r.status === 401 ? "トークンが違うか、期限切れかも" : r.status === 403 ? "権限がないよ（Contents を Read and write にしたか確認）" : "エラー " + r.status);
     if(remote) db = mergeDb(db, remote);
+    purgeTrash();
     const p = await gh(c, "PUT", {message: "sync " + new Date().toISOString(), content: b64enc(JSON.stringify(db)), ...(sha ? {sha} : {})});
     if(p.status === 409 || p.status === 422){ if(retry) return syncNow(0); throw new Error("他の端末と同時に更新したみたい。もう一度押してね"); }
     if(!p.ok) throw new Error(p.status === 404 ? "リポジトリが見つからないよ（名前とトークンの対象を確認）" : "保存できなかったよ（" + p.status + "）");
     Store.write(db); render(); setSyncMsg("同期できたよ（" + new Date().toLocaleTimeString("ja-JP") + "）");
-  } catch(e) { setSyncMsg("同期できなかった：" + e.message); }
+  } catch(e) { setSyncMsg("同期できなかった：" + (e.message === "Failed to fetch" ? "通信できないみたい（オフラインかも）" : e.message)); }
 }
 // 変更から8秒後に自動で同期する（続けて変更したら、最後の変更から数え直す）
 let syncTimer;
-function scheduleSync(){ const c = syncCfg(); if(!c.token || c.auto === false) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, 8000); }
+function scheduleSync(){ const c = syncCfg(); if(!c.token || c.auto === false) return; clearTimeout(syncTimer); badge("wait", "☁ 変更あり（同期待ち）"); syncTimer = setTimeout(syncNow, 8000); }
 // 設定欄に保存済みの値を入れる（トークンは見せない）
 function fillSync(){
   const c = syncCfg(); $("syOwner").value = c.owner || "naminapy"; $("syRepo").value = c.repo || "Game_Board_Data"; $("syAuto").checked = c.auto !== false;
   $("syToken").placeholder = c.token ? "保存済み（変える時だけ入力）" : ""; $("syToken").value = "";
+  $("syExp").value = c.exp || ""; const d = expDays();
+  $("syExpNote").textContent = d === null ? "" : d < 0 ? "⚠ 期限が切れてるよ。新しいトークンを作ってね" : d <= 7 ? "⚠ あと" + d + "日で期限切れ" : "あと" + d + "日で期限切れ";
 }
 $("sySave").onclick = () => {
-  set("gtm-sync", JSON.stringify({owner:$("syOwner").value.trim(), repo:$("syRepo").value.trim(), token:$("syToken").value.trim() || syncCfg().token, auto:$("syAuto").checked}));
+  set("gtm-sync", JSON.stringify({owner:$("syOwner").value.trim(), repo:$("syRepo").value.trim(), token:$("syToken").value.trim() || syncCfg().token, auto:$("syAuto").checked, exp:$("syExp").value}));
   fillSync(); syncNow();
 };
+// この端末のトークンを消す（クラウドのデータはそのまま）
+$("syClear").onclick = () => { const c = syncCfg(); delete c.token; set("gtm-sync", JSON.stringify(c)); $("syncBadge").hidden = true; fillSync(); setSyncMsg("この端末のトークンを消したよ"); };
+// バッジを押すと、設定の「データ」タブを開く
+$("syncBadge").onclick = () => { tab = "set"; stab = "data"; set("gtm-tab", tab); set("gtm-stab", stab); applyTab(); applyStab(); window.scrollTo(0, 0); };
 $("syNow").onclick = () => syncNow();
 // スマホとパソコンを行き来してアプリに戻ったときも、最新を取り込む
 document.addEventListener("visibilitychange", () => { if(!document.hidden && syncCfg().token && syncCfg().auto !== false) syncNow(); });
@@ -667,7 +698,7 @@ $("tplSave").onclick = () => {
 };
 $("tplList").onclick = e => {
   const use = e.target.dataset.tpluse, del = e.target.dataset.tpldel;
-  if(del){ db.templates = db.templates.filter(t => t.id !== del); save(); render(); return; }
+  if(del){ db.templates = db.templates.filter(t => t.id !== del); (db.gone = db.gone || {})[del] = Date.now(); save(); render(); return; }
   if(!use) return;
   const name = $("newP").value.trim();
   if(!name){ $("tplMsg").textContent = "「一般」タブの「新規プロジェクト」にゲーム名を入れてから押してね"; return; }
