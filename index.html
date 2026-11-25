@@ -88,6 +88,9 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
 #alert{border:2px solid var(--ac)}
 /* カウントダウンと図（棒グラフ）の見た目 */
 .cd{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.cdr{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.cdm{display:flex;flex-direction:column;align-items:center;background:var(--card);border:1px solid var(--bd);border-radius:calc(var(--r) - 4px);padding:6px 14px;min-width:100px}
+.cdm b{font-size:18px}
 .bigbadge{background:var(--ac);color:var(--on);border-radius:var(--r);padding:8px 16px;font-size:32px;font-weight:700;line-height:1.2}
 .bar{display:flex;height:16px;border-radius:99px;overflow:hidden;background:var(--card);border:1px solid var(--bd)}
 .seg{height:100%}
@@ -120,6 +123,7 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
 .tabs button.on{background:var(--ac);color:var(--on);border-color:var(--ac);font-weight:700}
 #vGantt,#vStats,#vSet,#vDiary{display:none}
 body[data-tab=gantt] #vGantt,body[data-tab=stats] #vStats,body[data-tab=set] #vSet,body[data-tab=diary] #vDiary{display:block}
+body:is([data-tab=stats],[data-tab=set],[data-tab=diary]) #sbar{display:none}
 body[data-tab=set] :is(#chips,#tools,#board,#feedBox,#cd),body[data-tab=diary] :is(#chips,#tools,#board,#feedBox,#cd){display:none}
 /* 日記：月ごとの折りたたみと、日記カード */
 .dmonth{margin-top:8px}.dmonth>summary{cursor:pointer;font-weight:700;padding:6px 0}
@@ -134,6 +138,8 @@ body[data-tab=set] :is(#chips,#tools,#board,#feedBox,#cd),body[data-tab=diary] :
 /* 設定の中の小タブ（一般 / 編集 / データ） */
 .pane{display:none}.pane.on{display:block}
 body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#tools,#board){display:none}
+.gl .dot{width:16px;height:16px;font-size:10px;margin-right:4px;vertical-align:middle}
+.gb{touch-action:pan-x}
 .gm,.gtd{position:absolute;top:0;bottom:0;width:0;pointer-events:none;z-index:1}
 .gm{border-left:2px dashed var(--ac)}.gtd{border-left:2px solid var(--tx);opacity:.5}
 .gm span{position:absolute;top:0;left:3px;font-size:10px;white-space:nowrap;background:var(--ac);color:var(--on);padding:0 4px;border-radius:4px}
@@ -145,17 +151,21 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
   <select id="thm" aria-label="テーマ"></select>
   <a id="spec" class="btn" target="_blank" rel="noopener" hidden>仕様書を開く</a>
   <button id="syncBadge" class="tag" hidden></button>
+  <button id="undo" disabled>↩ 元に戻す</button>
 </header>
 <nav class="tabs" id="tabs"><button data-tab="board">ボード</button><button data-tab="gantt">スケジュール</button><button data-tab="stats">進み具合</button><button data-tab="diary">日記</button><button data-tab="set">設定</button></nav>
 <div class="chips" id="chips"></div>
+<div class="row" id="sbar" style="padding:0 12px 8px"><input id="fq" type="search" name="task-search" autocomplete="off" spellcheck="false" placeholder="タスクを検索（名前・メモ）"><select id="fcat" aria-label="カテゴリで絞り込む"></select><select id="fph" aria-label="工程で絞り込む"></select><select id="fpri" aria-label="優先度で絞り込む"></select><select id="fdue" aria-label="期限で絞り込む"></select><button id="fclr" hidden>解除</button><span class="sub" id="fcnt"></span></div>
 <div class="row" id="tools" style="padding:0 12px 4px"><button class="pri" id="add">＋ タスクを追加</button><button id="hd"></button></div>
 <section class="box" id="upd" hidden><span>新しいバージョンがあるよ。</span> <button id="updNow" class="pri">更新する</button></section>
 <section class="box" id="bk" hidden></section>
+<section class="box" id="sizeBox" hidden></section>
+<section class="box" id="confBox" hidden></section>
 <section class="box" id="alert" hidden></section>
 <section class="box" id="cd"></section>
 <div class="board" id="board"></div>
 <section class="box" id="vGantt"><div class="row"><h3 style="margin:0;flex:1">スケジュール</h3><div class="seg2" id="gsw"><button class="chip" data-g="gantt">ガント</button><button class="chip" data-g="cal">カレンダー</button></div></div>
-<div id="ganttView"><p class="sub">バーを押すと編集。点線は目標、実線は今日、赤い枠は期限切れ。</p><div class="gantt" id="gantt"></div></div>
+<div id="ganttView"><div class="row" style="margin-bottom:6px"><p class="sub" style="margin:0;flex:1">バーを押すと編集（PCはドラッグで期間をずらせる）。点線は目標、実線は今日、赤い枠は期限切れ。</p><button id="gToday">今日へ戻る</button></div><div class="gantt" id="gantt"></div></div>
 <div id="calView" hidden>
   <div class="khead" id="calHead"></div>
   <div class="chips" id="calWho" style="padding:0 0 8px"></div>
@@ -169,11 +179,11 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
 
 <section class="box" id="vDiary">
   <div class="row"><h3 style="margin:0;flex:1">日記（制作日誌）</h3><button id="dAdd" class="pri">＋ 日記を書く</button></div>
-  <input id="dq" type="search" placeholder="日記を検索" style="margin-top:8px">
+  <input id="dq" type="search" name="diary-search" autocomplete="off" spellcheck="false" placeholder="日記を検索" style="margin-top:8px">
   <div id="diaryList" style="margin-top:8px"></div>
 </section>
 <section class="box" id="vSet">
-  <nav class="tabs" id="stabs" style="padding:0 0 8px"><button data-stab="gen">一般</button><button data-stab="edit">編集</button><button data-stab="data">データ</button></nav>
+  <nav class="tabs" id="stabs" style="padding:0 0 8px"><button data-stab="gen">一般</button><button data-stab="edit">編集</button><button data-stab="data">データ</button><button data-stab="help">使い方</button></nav>
 
   <div class="pane" data-pane="gen">
     <div class="sec"><h4>プロジェクト</h4>
@@ -216,15 +226,44 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
     </div>
   </div>
 
+  <div class="pane" data-pane="help">
+    <div class="sec"><h4>5つのタブ</h4><ul>
+      <li>ボード：タスクを4つの列で管理する。◀ ▶ で移動、PCはドラッグでもOK</li>
+      <li>スケジュール：ガント（期間のバー）と、メンバーの予定カレンダーを切り替える</li>
+      <li>進み具合：完了率や工程ごとのグラフ。PNG / PDFで保存できる</li>
+      <li>日記：制作日誌。月ごとにまとまって、カードを押すと全文が開く</li>
+      <li>設定：プロジェクト、目標、カテゴリ、同期、バックアップなど</li></ul></div>
+    <div class="sec"><h4>タスクの操作</h4><ul>
+      <li>カードを押すと編集。キーボードは Tab で選んで Enter、Alt + ← / → で列を移動</li>
+      <li>間違えたら、上の「元に戻す」か Ctrl + Z（タスク・日記・予定を最大20回まで）</li>
+      <li>検索バーで、名前・メモ・カテゴリ・工程・優先度・期限から絞り込める</li>
+      <li>タスクに仕様書のリンク（https://）を付けると、カードに「📄 仕様書」が出る</li></ul></div>
+    <div class="sec"><h4>期限と通知</h4><ul>
+      <li>期限が3日以内（期限切れも含む）の未完了タスクが、ボードの上に出る</li>
+      <li>設定の「デスクトップ通知」を許可すると、開いたときに通知される</li>
+      <li>最終目標を設定すると、「あと○日」のカウントダウンが出る</li></ul></div>
+    <div class="sec"><h4>スケジュールと予定</h4><ul>
+      <li>ガントのバーは、PCではドラッグで期間を動かせる。「今日へ戻る」で今日の位置に戻る</li>
+      <li>カレンダーの予定は、チームでは「内容を見せる項目」以外が「予定あり」だけになる（画面での表示だけの制限）</li></ul></div>
+    <div class="sec"><h4>データを守る</h4><ul>
+      <li>データはこの端末のブラウザに保存される。クラウド同期（GitHub）を設定すると、スマホとPCで同じ内容になる</li>
+      <li>ときどき「ファイルで保存」でバックアップを取る。削除したタスクは30日間ゴミ箱に残る</li>
+      <li>データが大きくなると警告が出る。同期の目安は約1MBまで</li>
+      <li>同じタスクを別の端末で同時に変えたときは、新しい方を残して、ボードの上でお知らせする</li></ul></div>
+    <div class="sec"><h4>困ったとき</h4><ul>
+      <li>画面が古いままのとき：Ctrl + Shift + R（強制再読み込み）。上に「更新する」が出たら、それを押す</li>
+      <li>同期できないとき：上の「☁」のバッジを押すと、設定のデータタブが開く。エラーの文を確認する</li></ul></div>
+  </div>
+
   <div class="pane" data-pane="data">
     <div class="sec"><h4>クラウド同期（GitHub）</h4>
       <p class="sub">スマホとパソコンで同じデータを見るための設定。トークンはこの端末のブラウザにだけ保存されるよ。</p>
-      <p class="lb">GitHubのユーザー名</p><input id="syOwner">
-      <p class="lb">データ用リポジトリ名</p><input id="syRepo">
-      <p class="lb">トークン（github_pat_ で始まるもの）</p><input id="syToken" type="password" autocomplete="off">
+      <p class="lb">GitHubのユーザー名</p><input id="syOwner" name="sync-owner" autocomplete="off">
+      <p class="lb">データ用リポジトリ名</p><input id="syRepo" name="sync-repo" autocomplete="off">
+      <p class="lb">トークン（github_pat_ で始まるもの）</p><input id="syToken" name="sync-token" type="password" autocomplete="new-password">
       <p class="lb">トークンの期限（メモ。近づくとお知らせするよ）</p><input id="syExp" type="date"><p class="sub" id="syExpNote"></p>
       <label class="sub"><input type="checkbox" id="syAuto" checked> 開いたときと変更したときに自動で同期する</label>
-      <div class="row" style="margin-top:8px"><button id="sySave" class="pri">保存して同期</button><button id="syNow">今すぐ同期</button><button id="syClear">この端末のトークンを消す</button></div><p class="sub" id="syncMsg"></p>
+      <div class="row" style="margin-top:8px"><button id="sySave" class="pri">保存して同期</button><button id="syNow">今すぐ同期</button><button id="syClear">この端末のトークンを消す</button></div><p class="sub" id="syncMsg"></p><p class="sub" id="sizeNote"></p>
     </div>
     <div class="sec"><h4>バックアップ</h4>
       <div class="row"><button id="expF">ファイルで保存</button><label class="btn" style="cursor:pointer">ファイルから読み込む<input id="impF" type="file" accept=".json,application/json" hidden></label></div>
@@ -269,6 +308,7 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
   <div id="whoBox"><p class="lb">担当者</p><select id="fWho"></select></div>
   <p class="lb">開始日</p><input id="fStart" type="date">
   <p class="lb">期限</p><input id="fDue" type="date">
+  <p class="lb">仕様書リンク（任意・https:// から）</p><input id="fSpec" name="task-spec" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/...">
   <p class="lb">メモ</p><textarea id="fMemo" rows="3"></textarea>
   <p class="err" id="err"></p>
   <div class="row"><button class="pri" id="save">保存</button><button id="cancel">キャンセル</button><button id="del">削除</button></div>
@@ -276,8 +316,9 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
 
 <script>
 // ===== 設定値：ここを変えれば人数上限や選択肢を変更できるよ =====
-const APP_VERSION = "2026-11-24b"; // 更新のたびに変える目印（古い画面に「更新する」を出すために使う）
+const APP_VERSION = "2026-11-25b"; // 更新のたびに変える目印（古い画面に「更新する」を出すために使う）
 const MAX_MEMBERS = 15;
+const SIZE_WARN = 700 * 1024, SIZE_MAX = 1000 * 1024; // データの大きさの目安（GitHubで同期できるのは約1MBまで）
 const DUE_DAYS = 3; // 期限が「近い」とみなす日数（変えたい時はここの数字を書き換える）
 const STATUS = [["todo","○","未着手"],["doing","◐","進行中"],["review","◎","レビュー待ち"],["done","●","完了"]];
 const CATS = ["企画","プログラム","グラフィック","サウンド","シナリオ","テスト"];
@@ -296,6 +337,23 @@ const get = k => { try { return localStorage.getItem(k); } catch(e) { return nul
 const set = (k,v) => { try { localStorage.setItem(k,v); } catch(e) {} };
 
 let db, filter = "", editing = null;
+// ===== 検索と絞り込み（ボードとガントの両方に効く） =====
+let F = {q:"", cat:"", ph:"", pri:"", due:""};
+const filtering = () => Object.values(F).some(Boolean);
+function passes(t){
+  if(F.cat && t.cat !== F.cat) return false;
+  if(F.ph && t.phase !== F.ph) return false;
+  if(F.pri && t.pri !== F.pri) return false;
+  if(F.q && !(t.title + " " + (t.memo || "") + " " + t.cat + " " + (t.phase || "")).toLowerCase().includes(F.q.toLowerCase())) return false;
+  if(F.due){
+    const today = ymd(new Date()), wk = new Date(); wk.setDate(wk.getDate() + 7);
+    if(F.due === "none") return !t.due;
+    if(!t.due) return false;
+    if(F.due === "late") return t.due < today && t.status !== "done";
+    if(F.due === "week") return t.due >= today && t.due <= ymd(wk);
+  }
+  return true;
+}
 const CARD_LIMIT = 50; // 1つの列に最初に出すカードの数（多いときは「さらに表示」で増やす）
 let more = {}, feedShow = 30; const limitOf = k => CARD_LIMIT + (more[k] || 0);
 let hideDone = get("gtm-hidedone") === "1"; // 完了タスクを隠すか（自分のブラウザに記憶される）
@@ -321,7 +379,7 @@ function load(){
     if(p.tasks.length === 4 && p.tasks.every(t => ST.includes(t.title))){ p.tasks = []; p.feed = []; }
     if(!p.tasks.length && p.members.length === 3 && p.members.every(m => SM.includes(m.name))) p.members = [];
   });
-  save();
+  save(); snapAll();
 }
 // 保存先をまとめた部分：今はブラウザ内保存。ここを入れ替えるだけで保存先を変えられる
 const Store = {
@@ -356,7 +414,40 @@ function log(text){
   p.feed.unshift({t:now, who, text});
   if(p.feed.length > 100){ p.feedCut = (p.feedCut || 0) + p.feed.length - 100; p.feed = p.feed.slice(0, 100); } // 古いものは省略して、件数だけ覚えておく
 }
-function commit(text){ if(text) log(text); save(); render(); }
+// ===== 元に戻す（タスク・日記・予定の変更を、最大20回さかのぼれる） =====
+// 変更前の中身を、1件ずつ文字にして覚えておく。メンバーや目標などの変更は対象外
+const UNDO_KINDS = [["tasks","タスク"],["diary","日記"],["events","予定"]];
+let undoStack = [], lastSnap = {};
+const snapProject = p => { const o = {}; UNDO_KINDS.forEach(([k]) => { o[k] = {}; (p[k] || []).forEach(i => o[k][i.id] = JSON.stringify(i)); }); return o; };
+const snapAll = () => { lastSnap = {}; db.projects.forEach(p => lastSnap[p.id] = snapProject(p)); }; // 読み込み・同期のあとに、今の状態を「基準」にし直す
+// 変更のあとに呼ぶ：基準と今を比べて、変わった所だけを「元に戻す」用に積む
+function trackUndo(text){
+  const p = cur(), prev = lastSnap[p.id], now = snapProject(p); lastSnap[p.id] = now;
+  if(!prev) return;
+  const changes = [];
+  UNDO_KINDS.forEach(([k]) => new Set([...Object.keys(prev[k]), ...Object.keys(now[k])]).forEach(id => { if(prev[k][id] !== now[k][id]) changes.push({k, id, before: prev[k][id] || null}); }));
+  if(!changes.length) return;
+  undoStack.push({pid:p.id, label: text || (changes.some(c => c.k === "diary") ? "日記の変更" : "予定の変更"), changes});
+  if(undoStack.length > 20) undoStack.shift();
+}
+function undoLast(){
+  const u = undoStack.pop(); if(!u) return;
+  const p = db.projects.find(x => x.id === u.pid); if(!p) return render();
+  const now = Date.now();
+  u.changes.forEach(c => {
+    const arr = p[c.k] = p[c.k] || [], i = arr.findIndex(x => x.id === c.id);
+    if(c.before){ const item = JSON.parse(c.before); item.updatedAt = now; item.updatedBy = db.me || ""; i >= 0 ? arr[i] = item : arr.push(item); } // 元の中身に戻す（同期で負けないよう、更新日時は今にする）
+    else if(i >= 0){ arr[i].deleted = true; arr[i].updatedAt = now; } // 「追加」を取り消す＝消した印を付ける
+  });
+  db.current = p.id; lastSnap[p.id] = snapProject(p);
+  log("元に戻した：" + u.label); save(); render();
+}
+function commit(text, noUndo){ if(!noUndo) trackUndo(text); if(text) log(text); save(); render(); }
+$("undo").onclick = undoLast;
+// Ctrl+Z（Macは⌘+Z）でも戻せる。文字を入力している時と、ダイアログを開いている時は、ふつうの動きにする
+document.addEventListener("keydown", e => {
+  if((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "z" && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName || "") && !document.querySelector("dialog[open]")){ e.preventDefault(); undoLast(); }
+});
 
 // 担当者の色つきマーク（色だけでなく頭文字でも区別する）
 function dot(p, id){
@@ -384,11 +475,11 @@ function render(){
   const today = ymd(new Date());
   const order = {high:0, mid:1, low:2};
   $("board").innerHTML = STATUS.filter(s => !(hideDone && s[0] === "done")).map(([k,icon,label]) => {
-    const list = p.tasks.filter(t => !t.deleted && t.status===k && (!filter || t.assignee===filter))
+    const list = p.tasks.filter(t => !t.deleted && t.status===k && (!filter || t.assignee===filter) && passes(t))
       .sort((a,b) => order[a.pri]-order[b.pri] || (a.due||"9").localeCompare(b.due||"9"));
     return `<div class="col" data-st="${k}"><h3><span>${icon} ${label}</span><span>${list.length}</span></h3><div class="list">` +
       (list.slice(0, limitOf(k)).map(t => `<div class="card" data-id="${t.id}" draggable="true" tabindex="0" role="group" aria-label="${esc(t.title)}"><b>${esc(t.title)}</b>
-        <div class="meta"><span class="tag">${esc(t.cat)}</span><span class="tag">優先 ${PRI[t.pri]}</span>${t.phase ? `<span class="tag">${esc(t.phase)}</span>` : ""}${t.est ? `<span class="tag">${t.est}h</span>` : ""}${solo ? "" : dot(p,t.assignee)}
+        <div class="meta"><span class="tag">${esc(t.cat)}</span><span class="tag">優先 ${PRI[t.pri]}</span>${t.phase ? `<span class="tag">${esc(t.phase)}</span>` : ""}${t.est ? `<span class="tag">${t.est}h</span>` : ""}${/^https:\/\//i.test(t.spec || "") ? `<a class="tag" href="${esc(t.spec)}" target="_blank" rel="noopener" aria-label="仕様書を開く">📄 仕様書</a>` : ""}${solo ? "" : dot(p,t.assignee)}
         ${t.due ? (t.due < today && t.status!=="done" ? `<span class="late">期限切れ ${esc(t.due)}</span>` : `<span>〜${esc(t.due)}</span>`) : ""}</div>
         <div class="mv"><button data-mv="-1" aria-label="左の列へ">◀</button><button data-mv="1" aria-label="右の列へ">▶</button></div></div>`).join("") || `<p class="sub">なし</p>`) + (list.length > limitOf(k) ? `<button class="more" data-more="${k}">さらに ${list.length - limitOf(k)}件を表示</button>` : "") + `</div></div>`;
   }).join("");
@@ -399,6 +490,15 @@ function render(){
     + (p.feedCut ? `<li class="sub">これより古い更新 ${p.feedCut}件は省略したよ</li>` : "")
     || `<li class="sub">まだ更新はないよ。タスクを動かすとここに記録される。</li>`;
 
+  const known = a => [...new Set(a.filter(Boolean))];
+  $("fcat").innerHTML = opts([["","カテゴリ：すべて"], ...known([...catsOf(p), ...p.tasks.map(t => t.cat)]).map(c => [c, c])], F.cat);
+  $("fph").innerHTML = opts([["","工程：すべて"], ...known([...phasesOf(p), ...p.tasks.map(t => t.phase)]).map(c => [c, c])], F.ph);
+  $("fpri").innerHTML = opts([["","優先度：すべて"], ...Object.entries(PRI).map(([k, v]) => [k, "優先度：" + v])], F.pri);
+  $("fdue").innerHTML = opts([["","期限：すべて"],["late","期限切れ"],["week","7日以内"],["none","期限なし"]], F.due);
+  $("fclr").hidden = !filtering();
+  $("fcnt").textContent = filtering() ? `絞り込み中：${p.tasks.filter(t => !t.deleted && (!filter || t.assignee === filter) && passes(t)).length}件` : "";
+  renderSize(); renderConf();
+  const ul = undoStack[undoStack.length - 1]; $("undo").disabled = !ul; $("undo").title = ul ? "元に戻す：" + ul.label : "戻せる操作はまだないよ";
   $("cnt").textContent = `(${p.members.length}/${MAX_MEMBERS})`;
   $("mem").innerHTML = p.members.map(m => `<div class="row" style="margin:2px 0">${dot(p,m.id)} ${esc(m.name)} <button data-rm="${m.id}" aria-label="${esc(m.name)}を削除">削除</button></div>`).join("");
   $("me").innerHTML = opts([["","未選択"], ...p.members.map(m => [m.name, m.name])], db.me);
@@ -426,7 +526,7 @@ function openEdit(id){
   $("fPri").innerHTML = opts(Object.entries(PRI), editing.pri);
   $("fSt").innerHTML = opts(STATUS.map(s => [s[0], s[1]+" "+s[2]]), editing.status);
   $("fWho").innerHTML = opts([["","未定"], ...p.members.map(m => [m.id, m.name])], editing.assignee);
-  $("fStart").value = editing.start || ""; $("fDue").value = editing.due; $("fMemo").value = editing.memo;
+  $("fSpec").value = editing.spec || ""; $("fStart").value = editing.start || ""; $("fDue").value = editing.due; $("fMemo").value = editing.memo;
   $("err").textContent = ""; $("del").hidden = !!editing.isNew; $("dlg").showModal();
 }
 $("save").onclick = () => {
@@ -434,8 +534,10 @@ $("save").onclick = () => {
   if(!title){ $("err").textContent = "タスク名を入力してね"; return; }
   const sd = $("fStart").value, dd = $("fDue").value;
   if(sd && dd && sd > dd){ $("err").textContent = "開始日は期限より前にしてね"; return; }
+  const sp = $("fSpec").value.trim(); // 安全のため https:// のリンクだけ許可する
+  if(sp && !/^https:\/\//i.test(sp)){ $("err").textContent = "仕様書リンクは https:// から始まるものだけ使えるよ"; return; }
   const p = cur(), t = editing, oldSt = t.status;
-  Object.assign(t, {title, cat:$("fCat").value, pri:$("fPri").value, status:$("fSt").value, assignee:$("fWho").value, phase:$("fPhase").value, est:Number($("fEst").value) || 0, start:$("fStart").value, due:$("fDue").value, memo:$("fMemo").value, updatedAt:Date.now(), updatedBy:db.me || ""});
+  Object.assign(t, {title, cat:$("fCat").value, pri:$("fPri").value, status:$("fSt").value, assignee:$("fWho").value, phase:$("fPhase").value, est:Number($("fEst").value) || 0, spec:sp, start:$("fStart").value, due:$("fDue").value, memo:$("fMemo").value, updatedAt:Date.now(), updatedBy:db.me || ""});
   let msg = `「${title}」を編集`;
   if(t.isNew){ delete t.isNew; p.tasks.push(t); msg = `「${title}」を追加`; }
   else if(oldSt !== t.status) msg = `「${title}」を ${STATUS.find(s=>s[0]===t.status)[2]} にした`;
@@ -449,7 +551,11 @@ $("del").onclick = () => { // 削除は「消した印」を付けるだけ（Gi
 
 // ===== ボタン操作 =====
 $("add").onclick = () => openEdit();
+$("fq").oninput = e => { F.q = e.target.value.trim(); render(); };
+[["fcat","cat"],["fph","ph"],["fpri","pri"],["fdue","due"]].forEach(([id, k]) => $(id).onchange = e => { F[k] = e.target.value; render(); });
+$("fclr").onclick = () => { F = {q:"", cat:"", ph:"", pri:"", due:""}; $("fq").value = ""; render(); };
 $("board").onclick = e => {
+  if(e.target.closest("a")) return; // 仕様書リンクを押したときは、編集画面を開かない
   const card = e.target.closest(".card"); if(!card) return;
   const mv = e.target.closest("[data-mv]");
   if(!mv) return openEdit(card.dataset.id);
@@ -459,7 +565,7 @@ $("board").onclick = e => {
   t.status = STATUS[i][0]; t.updatedAt = Date.now(); t.updatedBy = db.me || ""; commit(`「${t.title}」を ${STATUS[i][2]} に移動`);
 };
 $("chips").onclick = e => { const b = e.target.closest("[data-f]"); if(b){ filter = b.dataset.f; render(); } };
-$("prj").onchange = e => { db.current = e.target.value; filter = ""; save(); render(); };
+$("prj").onchange = e => { db.current = e.target.value; filter = ""; F = {q:"", cat:"", ph:"", pri:"", due:""}; $("fq").value = ""; save(); render(); };
 $("thm").onchange = e => { set("gtm-theme", e.target.value); render(); };
 $("pTheme").onchange = e => { cur().theme = e.target.value; set("gtm-theme", ""); commit(`標準テーマを「${THEMES[e.target.value]}」にした`); };
 $("specUrl").onchange = e => {
@@ -486,7 +592,7 @@ $("addP").onclick = () => {
 // 書き出し・読み込み：ファイル保存は使えないので、テキストをコピーして使う
 $("exp").onclick = () => { $("json").value = JSON.stringify(db, null, 1); $("json").select(); $("msg").textContent = "コピーして保存してね"; };
 $("imp").onclick = () => {
-  try { const d = JSON.parse($("json").value); if(!isValid(d)) throw 0; db = migrate(d); if(!db.projects.some(p => p.id === db.current)) db.current = db.projects[0].id; save(); render(); $("msg").textContent = "読み込んだよ"; }
+  try { const d = JSON.parse($("json").value); if(!isValid(d)) throw 0; db = migrate(d); if(!db.projects.some(p => p.id === db.current)) db.current = db.projects[0].id; save(); snapAll(); undoStack = []; render(); $("msg").textContent = "読み込んだよ"; }
   catch(e) { $("msg").textContent = "JSONの形式が違うみたい"; }
 };
 
@@ -552,8 +658,9 @@ function repData(){
 // 画面に出すカウントダウンと棒グラフ
 function renderReport(){
   const R = repData();
-  $("cd").innerHTML = R.next ? `<div class="cd"><div class="bigbadge">${dayText(R.days(R.next))}</div><div><b>${esc(R.next.name)}</b> <span class="sub">${esc(R.next.date)}</span><br><span class="sub">それまでが期限の未完了タスク：${R.left}件</span></div></div>` +
-    (R.ms.length > 1 ? `<div class="meta">${R.ms.filter(m => m !== R.next).map(m => `<span class="tag">${esc(m.name)} ${R.days(m) >= 0 ? "あと" + R.days(m) + "日" : "終了"}</span>`).join("")}</div>` : "")
+  const others = R.ms.filter(m => m !== R.next); // いちばん近い目標以外は、右側にカードで並べる
+  $("cd").innerHTML = R.next ? `<div class="cd"><div class="bigbadge">${dayText(R.days(R.next))}</div><div><b>${esc(R.next.name)}</b> <span class="sub">${esc(R.next.date)}</span><br><span class="sub">それまでが期限の未完了タスク：${R.left}件</span></div>` +
+    (others.length ? `<div class="cdr">${others.map(m => `<div class="cdm"><span class="sub">${esc(m.name)}</span><b>${R.days(m) >= 0 ? "あと" + R.days(m) + "日" : "終了"}</b><span class="sub">${esc(m.date)}</span></div>`).join("")}</div>` : "") + `</div>`
     : `<p class="sub">最終目標がまだないよ。設定の「最終目標」で「α版提出」などを決めてね。</p>`;
   // 1行ぶんの棒グラフ：左に名前、真ん中に棒、右に数字（どの項目も同じ並びにそろえる）
   const rowB = (label, inner, right) => `<div class="crow"><span>${esc(label)}</span><div class="bar">${inner}</div><span>${right}</span></div>`;
@@ -634,6 +741,15 @@ $("phSave").onclick = () => { const l = parseList($("phIn").value); if(!l.length
 
 // ===== クラウド同期（GitHubの非公開リポジトリの data.json に保存して、端末間で共有） =====
 const syncCfg = () => { try { return JSON.parse(get("gtm-sync")) || {}; } catch(e) { return {}; } }; // ユーザー名・リポジトリ名・トークンはこの端末だけに保存
+// データの大きさを測って、大きくなってきたら知らせる
+const dataSize = () => new Blob([JSON.stringify(db)]).size;
+function renderSize(){
+  const n = dataSize(), kb = Math.round(n / 1024), warn = n >= SIZE_WARN;
+  $("sizeNote").textContent = `データの大きさ：${kb}KB（同期できる目安の上限は約${Math.round(SIZE_MAX / 1024)}KB）`;
+  $("sizeBox").hidden = !warn;
+  $("sizeBox").innerHTML = warn ? `<span>データが大きくなってきたよ（${kb}KB）。上限に近づくと同期できなくなるから、古い日記や完了タスクを整理しよう。まずは手元にバックアップしておくと安心だよ。</span> <button id="sizeBk" class="pri">ファイルで保存</button>` : "";
+}
+$("sizeBox").onclick = e => { if(e.target.id === "sizeBk") saveBackupFile(); };
 // ゴミ箱の自動削除：削除から30日たったタスクを、データから完全に消す
 const TRASH_DAYS = 30;
 function purgeTrash(){ const lim = Date.now() - TRASH_DAYS * 864e5; db.projects.forEach(p => { p.tasks = p.tasks.filter(t => !(t.deleted && (t.updatedAt || 0) < lim)); p.diary = (p.diary || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim)); p.events = (p.events || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim)); }); }
@@ -655,39 +771,68 @@ const gh = (c, method, body) => fetch(`https://api.github.com/repos/${c.owner}/$
   method, cache: "no-store", body: body && JSON.stringify(body),
   headers: {Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json", "Content-Type": "application/json"}});
 // 2つのデータを合わせる：タスクは1つずつ新しいほうを残す。設定などは新しく保存したほうを優先する
-function mergeDb(a, b){ // a=この端末、b=クラウド
+// 同時編集のとき、どの項目が違ったかを知らせるための名前
+const CONF_FIELDS = [["title","名前"],["status","ステータス"],["due","期限"],["start","開始日"],["assignee","担当者"],["cat","カテゴリ"],["pri","優先度"],["phase","工程"],["est","見積時間"],["spec","仕様書リンク"],["memo","メモ"],["deleted","削除"]];
+function mergeDb(a, b, conf, since){ // a=この端末、b=クラウド、conf=同時編集の記録を入れる配列、since=前回の同期の時刻
   const newer = (a.mtime || 0) >= (b.mtime || 0) ? a : b, older = newer === a ? b : a, copy = x => JSON.parse(JSON.stringify(x));
   const dead = new Set([...(a.deletedProjects || []), ...(b.deletedProjects || [])]);
   const out = copy(newer); out.deletedProjects = [...dead]; out.mtime = Math.max(a.mtime || 0, b.mtime || 0); out.me = a.me; out.current = a.current;
   const gone = {...(b.gone || {}), ...(a.gone || {})}; out.gone = gone; // 消したメンバー・目標・テンプレートの「消した印」
   const union = (older, newer) => { const m = new Map(); [...older, ...newer].forEach(i => m.set(i.id, i)); return [...m.values()].filter(i => !gone[i.id]); }; // 両方を合わせる（同じIDは新しいほう）
-  const byTime = (mine, other) => { const m = new Map(mine.map(i => [i.id, i])); other.forEach(i => { const x = m.get(i.id); if(!x || (i.updatedAt || 0) > (x.updatedAt || 0)) m.set(i.id, copy(i)); }); return [...m.values()]; }; // 1件ずつ、更新日時が新しいほうを残す
+  const same = (x, y) => JSON.stringify({...x, updatedAt:0, updatedBy:""}) === JSON.stringify({...y, updatedAt:0, updatedBy:""});
+  const byTime = (mine, other, track) => { const m = new Map(mine.map(i => [i.id, i])); other.forEach(i => { const x = m.get(i.id);
+    if(x && track && since && (i.updatedAt || 0) > since && (x.updatedAt || 0) > since && !same(i, x)) (i.updatedAt || 0) > (x.updatedAt || 0) ? track(i, x) : track(x, i); // 両方が同期のあとに変更 → 負けた方を知らせる用に記録
+    if(!x || (i.updatedAt || 0) > (x.updatedAt || 0)) m.set(i.id, copy(i)); }); return [...m.values()]; }; // 1件ずつ、更新日時が新しいほうを残す
   out.templates = union(older.templates || [], out.templates || []);
   older.projects.forEach(p => { if(!out.projects.some(x => x.id === p.id)) out.projects.push(copy(p)); });
   out.projects = out.projects.filter(p => !dead.has(p.id));
   out.projects.forEach(p => {
     p.members = p.members.filter(m => !gone[m.id]); p.milestones = (p.milestones || []).filter(m => !gone[m.id]);
     const o = older.projects.find(x => x.id === p.id); if(!o) return;
-    p.tasks = byTime(p.tasks, o.tasks); p.diary = byTime(p.diary || [], o.diary || []); p.events = byTime(p.events || [], o.events || []); // タスクと日記は1件ずつ // タスクは1件ずつ、メンバーと目標は両方を合わせる
+    p.tasks = byTime(p.tasks, o.tasks, (w, l) => conf && conf.push({pid:p.id, id:w.id, title:w.title, lose:copy(l), diff:CONF_FIELDS.filter(([k]) => JSON.stringify(w[k] ?? "") !== JSON.stringify(l[k] ?? "")).map(f => f[0])})); p.diary = byTime(p.diary || [], o.diary || []); p.events = byTime(p.events || [], o.events || []); // タスクと日記は1件ずつ // タスクは1件ずつ、メンバーと目標は両方を合わせる
     p.members = union(o.members, p.members); p.milestones = union(o.milestones || [], p.milestones || []);
     const seen = new Set(); // 更新フィードは両方を合わせて、重複を消して新しい順に100件
     p.feed = [...p.feed, ...o.feed].filter(f => { const k = f.t + f.who + f.text; return seen.has(k) ? false : seen.add(k); }).sort((x, y) => y.t - x.t).slice(0, 100);
   });
   return out;
 }
+// 同時編集の記録は、この端末にだけ保存する（同じものは重ねない・最大20件）
+const confList = () => { try { return JSON.parse(get("gtm-conf")) || []; } catch(e) { return []; } };
+function addConf(list){
+  if(!list.length) return;
+  const cur0 = confList(); list.forEach(c => { if(!cur0.some(x => x.id === c.id && x.lose.updatedAt === c.lose.updatedAt)) cur0.push(c); });
+  set("gtm-conf", JSON.stringify(cur0.slice(-20)));
+}
+const confVal = (p, k, v) => k === "status" ? ((STATUS.find(s => s[0] === v) || [])[2] || v) : k === "assignee" ? ((p.members.find(m => m.id === v) || {}).name || "未定") : k === "pri" ? (PRI[v] || v) : k === "deleted" ? (v ? "削除済み" : "削除なし") : (v === "" || v == null ? "なし" : String(v));
+function renderConf(){
+  const list = confList().filter(c => db.projects.some(p => p.id === c.pid && p.tasks.some(t => t.id === c.id)));
+  $("confBox").hidden = !list.length;
+  $("confBox").innerHTML = list.length ? `<h3>同時に編集されたタスク（${list.length}件）</h3><p class="sub">別の端末と同じタスクを同時に変えたから、新しい方を残したよ。古い方の内容は、ここから戻せる。</p>` + list.map((c, i) => {
+    const p = db.projects.find(x => x.id === c.pid);
+    return `<div class="sec"><b>${esc(c.title)}</b><div class="sub">古い方の内容：${c.diff.map(k => `${esc(CONF_FIELDS.find(f => f[0] === k)[1])}＝${esc(confVal(p, k, c.lose[k]))}`).join("、") || "（違いなし）"}</div><div class="row" style="margin-top:6px"><button data-confuse="${i}">古い方の内容に戻す</button><button data-confok="${i}">このままでOK</button></div></div>`; }).join("") : "";
+}
+$("confBox").onclick = e => {
+  const all = confList(), u = e.target.dataset.confuse, o = e.target.dataset.confok, i = +(u ?? o); if(u == null && o == null) return;
+  const list = all.filter(c => db.projects.some(p => p.id === c.pid && p.tasks.some(t => t.id === c.id))), c = list[i]; if(!c) return;
+  set("gtm-conf", JSON.stringify(all.filter(x => x !== all.find(y => y.id === c.id && y.lose.updatedAt === c.lose.updatedAt))));
+  if(u != null){ const p = db.projects.find(x => x.id === c.pid), t = p.tasks.find(x => x.id === c.id); db.current = p.id; Object.assign(t, c.lose, {updatedAt:Date.now(), updatedBy:db.me || ""}); commit(`「${t.title}」を古い方の内容に戻した`); }
+  else render();
+};
 async function syncNow(retry = 1){
   const c = syncCfg(); if(!c.token || !c.owner || !c.repo){ setSyncMsg("ユーザー名・リポジトリ名・トークンを入れてね"); return; }
   setSyncMsg("同期中…");
+  const t0 = Date.now(), since = Number(get("gtm-lastsync") || 0), conf = [];
   try {
     const r = await gh(c, "GET"); let sha, remote = null;
     if(r.status === 200){ const j = await r.json(); sha = j.sha; remote = JSON.parse(b64dec(j.content)); if(!isValid(remote)) throw new Error("クラウドのデータの形が違うよ"); remote = migrate(remote); }
     else if(r.status !== 404) throw new Error(r.status === 401 ? "トークンが違うか、期限切れかも" : r.status === 403 ? "権限がないよ（Contents を Read and write にしたか確認）" : "エラー " + r.status);
-    if(remote) db = mergeDb(db, remote);
+    if(remote) db = mergeDb(db, remote, conf, since);
     purgeTrash();
+    if(dataSize() > SIZE_MAX) throw new Error("データが大きすぎて同期できないよ（約1MBまで）。古い日記や完了タスクを整理してね");
     const p = await gh(c, "PUT", {message: "sync " + new Date().toISOString(), content: b64enc(JSON.stringify(db)), ...(sha ? {sha} : {})});
     if(p.status === 409 || p.status === 422){ if(retry) return syncNow(0); throw new Error("他の端末と同時に更新したみたい。もう一度押してね"); }
     if(!p.ok) throw new Error(p.status === 404 ? "リポジトリが見つからないよ（名前とトークンの対象を確認）" : "保存できなかったよ（" + p.status + "）");
-    Store.write(db); render(); setSyncMsg("同期できたよ（" + new Date().toLocaleTimeString("ja-JP") + "）");
+    Store.write(db); snapAll(); set("gtm-lastsync", String(t0)); addConf(conf); render(); setSyncMsg("同期できたよ（" + new Date().toLocaleTimeString("ja-JP") + "）");
   } catch(e) { setSyncMsg("同期できなかった：" + (e.message === "Failed to fetch" ? "通信できないみたい（オフラインかも）" : e.message)); }
 }
 // 変更から8秒後に自動で同期する（続けて変更したら、最後の変更から数え直す）
@@ -891,23 +1036,23 @@ $("tabs").onclick = e => {
 addEventListener("resize", () => { if(tab === "gantt") renderGantt(); });
 
 // ===== ガント風スケジュール（横に日付、縦にタスク） =====
-let ganttScrolled = false;
+let ganttScrolled = false, gW = 28, gDrag = null, gSkipUntil = 0; // gW=1日の幅 / gDrag=ドラッグ中のバー
 function renderGantt(){
   const p = cur(), box = $("gantt"), D = 864e5, LW = 190; // LW=左のタスク名欄の幅(px)
   const parse = s => new Date(s + "T00:00:00"), today = new Date(); today.setHours(0,0,0,0);
   // 期限があるタスクだけを、開始日順に並べる（開始日が無ければ期限の1日だけのバー）
-  const allTs = p.tasks.filter(t => !t.deleted && t.due && !(hideDone && t.status === "done")).sort((a,b) => (a.start || a.due).localeCompare(b.start || b.due));
+  const allTs = p.tasks.filter(t => !t.deleted && t.due && passes(t) && !(hideDone && t.status === "done")).sort((a,b) => (a.start || a.due).localeCompare(b.start || b.due));
   const ts = allTs.slice(0, 150); // 行が多すぎると重いので、最大150行まで
   if(!ts.length){ box.innerHTML = '<p class="sub">期限（と開始日）を入れたタスクが、ここに並ぶよ。</p>'; return; }
   const ms = p.milestones || [];
   const from = new Date(Math.min(today, ...ts.map(t => parse(t.start || t.due))) - 2 * D);
   const to = new Date(Math.max(today, ...ts.map(t => parse(t.due)), ...ms.map(m => parse(m.date))) + 3 * D);
   const n = Math.round((to - from) / D) + 1, idx = d => Math.round((d - from) / D); // idx = 左端から何日目か
-  const W = Math.max(28, Math.floor(((box.clientWidth || 900) - LW) / n)); // 1日の幅。画面の幅いっぱいに広げる（狭いときは横スクロール）
+  const W = gW = Math.max(28, Math.floor(((box.clientWidth || 900) - LW) / n)); // 1日の幅。画面の幅いっぱいに広げる（狭いときは横スクロール）
   const head = Array.from({length:n}, (_, i) => { const d = new Date(+from + i * D), wk = d.getDay() === 0 || d.getDay() === 6;
     return `<span class="gd${wk ? " we" : ""}" style="width:${W}px">${d.getDate() === 1 || i === 0 ? (d.getMonth() + 1) + "/" : ""}${d.getDate()}</span>`; }).join("");
   const rows = ts.map(t => { const s = idx(parse(t.start || t.due)), e = idx(parse(t.due)), late = t.due < ymd(today) && t.status !== "done";
-    return `<div class="gr"><span class="gl" title="${esc(t.title)}">${STATUS.find(x => x[0] === t.status)[1]} ${esc(t.title)}</span><div class="gt" style="width:${n * W}px"><div class="gb s-${t.status}${late ? " glate" : ""}" data-id="${t.id}" tabindex="0" role="button" aria-label="${esc(t.title)} 〜${t.due}" style="left:${s * W}px;width:${(e - s + 1) * W - 2}px"></div></div></div>`; }).join("");
+    return `<div class="gr"><span class="gl" title="${esc(t.title)}">${p.mode !== "solo" && p.members.some(m => m.id === t.assignee) ? dot(p, t.assignee) : ""}${STATUS.find(x => x[0] === t.status)[1]} ${esc(t.title)}</span><div class="gt" style="width:${n * W}px"><div class="gb s-${t.status}${late ? " glate" : ""}" data-id="${t.id}" tabindex="0" role="button" aria-label="${esc(t.title)} 〜${t.due}" style="left:${s * W}px;width:${(e - s + 1) * W - 2}px${p.mode !== "solo" && p.members.some(m => m.id === t.assignee) ? ";box-shadow:inset 5px 0 0 " + memColor(p, t.assignee) : ""}"></div></div></div>`; }).join("");
   // 縦線（目標は点線、今日は実線）
   const line = (cls, d, label) => `<div class="${cls}" style="left:${LW + idx(d) * W + W / 2}px">${label ? `<span>${esc(label)}</span>` : ""}</div>`;
   box.innerHTML = `<div style="position:relative;width:${LW + n * W}px"><div class="gr"><span class="gl"></span><div class="gt" style="width:${n * W}px">${head}</div></div>${rows}` +
@@ -915,7 +1060,29 @@ function renderGantt(){
     (allTs.length > ts.length ? `<p class="sub">ほか ${allTs.length - ts.length}件は省略したよ。「完了を隠す」などで絞ってね。</p>` : "");
   if(!ganttScrolled){ box.scrollLeft = Math.max(0, LW + idx(today) * W - 220); ganttScrolled = true; } // 最初だけ今日の位置へスクロール
 }
-$("gantt").onclick = e => { const b = e.target.closest("[data-id]"); if(b) openEdit(b.dataset.id); };
+$("gantt").onclick = e => { if(Date.now() < gSkipUntil) return; const b = e.target.closest("[data-id]"); if(b) openEdit(b.dataset.id); }; // ドラッグの直後は、編集画面を開かない
+$("gToday").onclick = () => { ganttScrolled = false; renderGantt(); };
+// バーをドラッグして、開始日と期限をまとめてずらす（マウス・ペン用。タッチは、横スクロールと区別がつかないので押して編集）
+$("gantt").addEventListener("pointerdown", e => {
+  const b = e.target.closest(".gb"); if(!b || e.pointerType === "touch" || e.button) return;
+  gDrag = {id:b.dataset.id, x:e.clientX, dx:0, bar:b, left:parseFloat(b.style.left)};
+  try { b.setPointerCapture(e.pointerId); } catch(err) {}
+});
+$("gantt").addEventListener("pointermove", e => {
+  if(!gDrag) return; const dx = e.clientX - gDrag.x;
+  if(Math.abs(dx) > 4) gDrag.dx = dx;
+  if(gDrag.dx) gDrag.bar.style.left = (gDrag.left + Math.round(gDrag.dx / gW) * gW) + "px"; // 1日ぶんずつ動く
+});
+$("gantt").addEventListener("pointerup", () => {
+  if(!gDrag) return; const g = gDrag; gDrag = null; if(!g.dx) return;
+  gSkipUntil = Date.now() + 300;
+  const days = Math.round(g.dx / gW), t = cur().tasks.find(x => x.id === g.id);
+  if(!days || !t) return renderGantt(); // 動かしていなければ、元の位置に戻す
+  const sh = v => { const d = new Date(v + "T00:00:00"); d.setDate(d.getDate() + days); return ymd(d); };
+  if(t.start) t.start = sh(t.start); t.due = sh(t.due); t.updatedAt = Date.now(); t.updatedBy = db.me || "";
+  commit(`「${t.title}」の期間を ${days > 0 ? "+" : ""}${days}日 ずらした`);
+});
+$("gantt").addEventListener("pointercancel", () => { if(gDrag){ gDrag = null; renderGantt(); } });
 $("gantt").onkeydown = e => { if(e.key === "Enter" && e.target.dataset.id) openEdit(e.target.dataset.id); }; // キーボードでもバーを開ける
 
 // ===== テンプレート（タスクの雛形を保存して、新しいプロジェクトに使い回す） =====
@@ -1041,6 +1208,7 @@ $("notif").onclick = () => {
 };
 
 load(); render(); notifyOnce(); fillSync();
+$("dq").value = ""; setTimeout(() => { $("dq").value = ""; if(tab === "diary") renderDiary(); }, 600); // ブラウザの自動入力が入っても、検索欄は空に戻す
 if(syncCfg().token && syncCfg().auto !== false) syncNow(); // 開いたときに自動で同期
 // アプリとしてインストールできるように、オフライン用の仕組みを登録する（http/https のときだけ）
 if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
