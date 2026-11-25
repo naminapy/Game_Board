@@ -1,10 +1,10 @@
 // オフラインでも開けるようにするための「サービスワーカー」
 // 通信できるときは最新のファイルを取って保存し、通信できないときは保存しておいたものを出す
-const CACHE = "game-board-v3";
+const CACHE = "game-board-v4";
 
 // 最初にインストールされるとき：基本のファイルを保存しておく
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(["./", "./index.html", "./manifest.webmanifest", "./icon-192.png"])));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(["./", "./index.html", "./style.css", "./app.js", "./manifest.webmanifest", "./icon-192.png"])));
   self.skipWaiting();
 });
 
