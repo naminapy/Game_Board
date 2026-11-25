@@ -108,10 +108,10 @@ dialog input,dialog select,dialog textarea,#json,.box input[type=text],.box inpu
 .tabs{display:flex;gap:6px;padding:0 12px 8px}
 .tabs button{flex:1;border-radius:99px;padding:8px 4px;white-space:nowrap}
 .tabs button.on{background:var(--ac);color:var(--on);border-color:var(--ac);font-weight:700}
-#vGantt,#vStats,#vSet,#vDiary{display:none}
-body[data-tab=gantt] #vGantt,body[data-tab=stats] #vStats,body[data-tab=set] #vSet,body[data-tab=diary] #vDiary{display:block}
-body:is([data-tab=stats],[data-tab=set],[data-tab=diary]) #sbar{display:none}
-body[data-tab=set] :is(#chips,#tools,#board,#feedBox,#cd),body[data-tab=diary] :is(#chips,#tools,#board,#feedBox,#cd){display:none}
+#vGantt,#vStats,#vSet,#vDiary,#vProd{display:none}
+body[data-tab=gantt] #vGantt,body[data-tab=stats] #vStats,body[data-tab=set] #vSet,body[data-tab=diary] #vDiary,body[data-tab=prod] #vProd{display:block}
+body:is([data-tab=stats],[data-tab=set],[data-tab=diary],[data-tab=prod]) #sbar{display:none}
+body[data-tab=set] :is(#chips,#tools,#board,#feedBox,#cd),body[data-tab=diary] :is(#chips,#tools,#board,#feedBox,#cd),body[data-tab=prod] :is(#chips,#tools,#board,#feedBox,#cd){display:none}
 /* 日記：月ごとの折りたたみと、日記カード */
 .dmonth{margin-top:8px}.dmonth>summary{cursor:pointer;font-weight:700;padding:6px 0}
 .dcard.open{border-color:var(--ac);box-shadow:0 1px 4px rgba(0,0,0,.1)}
@@ -130,3 +130,24 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
 .gm,.gtd{position:absolute;top:0;bottom:0;width:0;pointer-events:none;z-index:1}
 .gm{border-left:2px dashed var(--ac)}.gtd{border-left:2px solid var(--tx);opacity:.5}
 .gm span{position:absolute;top:0;left:3px;font-size:10px;white-space:nowrap;background:var(--ac);color:var(--on);padding:0 4px;border-radius:4px}
+
+/* すばやく追加の入力欄 */
+#qin{flex:1;min-width:150px}
+/* サブタスク・順番指定（タスクの編集画面） */
+.subr{margin:2px 0;gap:6px}
+.subr input[type=checkbox],.deps input[type=checkbox]{width:auto;flex:none}
+.subr button{flex:none}
+.deps{max-height:120px;overflow:auto;padding:2px 0}
+.deps label{display:block;margin:2px 0}
+/* 制作管理タブのカード */
+.pcard{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px 12px;margin:6px 0}
+.pcard .meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px}
+.pcard ul{margin:4px 0 0;padding-left:18px}
+.pcard .sub{white-space:pre-wrap}
+/* タスク完了のごほうび演出（動きを減らす設定の人には出さない） */
+.party{position:fixed;inset:0;pointer-events:none;z-index:99;overflow:hidden}
+.party span{position:absolute;top:60%;font-size:24px;opacity:0;animation:pop 1s ease-out forwards}
+@keyframes pop{0%{opacity:1;transform:translate(0,0) scale(.5)}100%{opacity:0;transform:translate(var(--x),var(--y)) scale(1.2)}}
+/* 画面がせまいときは、タブを2段に折り返して全部見えるようにする */
+@media (max-width:520px){.tabs{flex-wrap:wrap}.tabs button{flex:1 1 30%}}
+#pSw{flex-wrap:wrap}

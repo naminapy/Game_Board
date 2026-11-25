@@ -20,10 +20,10 @@
   <button id="syncBadge" class="tag" hidden></button>
   <button id="undo" disabled>↩ 元に戻す</button>
 </header>
-<nav class="tabs" id="tabs"><button data-tab="board">ボード</button><button data-tab="gantt">スケジュール</button><button data-tab="stats">進み具合</button><button data-tab="diary">日記</button><button data-tab="set">設定</button></nav>
+<nav class="tabs" id="tabs"><button data-tab="board">ボード</button><button data-tab="gantt">スケジュール</button><button data-tab="stats">進み具合</button><button data-tab="diary">日記</button><button data-tab="prod">制作管理</button><button data-tab="set">設定</button></nav>
 <div class="chips" id="chips"></div>
 <div class="row" id="sbar" style="padding:0 12px 8px"><input id="fq" type="search" name="task-search" autocomplete="off" spellcheck="false" placeholder="タスクを検索（名前・メモ）"><select id="fcat" aria-label="カテゴリで絞り込む"></select><select id="fph" aria-label="工程で絞り込む"></select><select id="fpri" aria-label="優先度で絞り込む"></select><select id="fdue" aria-label="期限で絞り込む"></select><button id="fclr" hidden>解除</button><span class="sub" id="fcnt"></span></div>
-<div class="row" id="tools" style="padding:0 12px 4px"><button class="pri" id="add">＋ タスクを追加</button><button id="hd"></button></div>
+<div class="row" id="tools" style="padding:0 12px 4px"><button class="pri" id="add">＋ タスクを追加</button><button id="hd"></button><input id="qin" name="quick-add" autocomplete="off" spellcheck="false" placeholder="すばやく追加：タイトルを入力して Enter"></div>
 <section class="box" id="upd" hidden><span>新しいバージョンがあるよ。</span> <button id="updNow" class="pri">更新する</button></section>
 <section class="box" id="bk" hidden></section>
 <section class="box" id="sizeBox" hidden></section>
@@ -48,6 +48,12 @@
   <div class="row"><h3 style="margin:0;flex:1">日記（制作日誌）</h3><button id="dAdd" class="pri">＋ 日記を書く</button></div>
   <input id="dq" type="search" name="diary-search" autocomplete="off" spellcheck="false" placeholder="日記を検索" style="margin-top:8px">
   <div id="diaryList" style="margin-top:8px"></div>
+</section>
+<section class="box" id="vProd">
+  <div class="row"><h3 style="margin:0;flex:1">制作管理</h3><button id="pAdd" class="pri">＋ 追加</button></div>
+  <div class="seg2" id="pSw" style="margin:8px 0"></div>
+  <p class="sub" id="pSum"></p>
+  <div id="pList"></div>
 </section>
 <section class="box" id="vSet">
   <nav class="tabs" id="stabs" style="padding:0 0 8px"><button data-stab="gen">一般</button><button data-stab="edit">編集</button><button data-stab="data">データ</button><button data-stab="help">使い方</button></nav>
@@ -94,17 +100,22 @@
   </div>
 
   <div class="pane" data-pane="help">
-    <div class="sec"><h4>5つのタブ</h4><ul>
+    <div class="sec"><h4>6つのタブ</h4><ul>
       <li>ボード：タスクを4つの列で管理する。◀ ▶ で移動、PCはドラッグでもOK</li>
       <li>スケジュール：ガント（期間のバー）と、メンバーの予定カレンダーを切り替える</li>
       <li>進み具合：完了率や工程ごとのグラフ。PNG / PDFで保存できる</li>
       <li>日記：制作日誌。月ごとにまとまって、カードを押すと全文が開く</li>
+      <li>制作管理：素材リスト（絵・音の状態）、プレイテストの記録、バージョンごとの変更点</li>
       <li>設定：プロジェクト、目標、カテゴリ、同期、バックアップなど</li></ul></div>
     <div class="sec"><h4>タスクの操作</h4><ul>
       <li>カードを押すと編集。キーボードは Tab で選んで Enter、Alt + ← / → で列を移動</li>
       <li>間違えたら、上の「元に戻す」か Ctrl + Z（タスク・日記・予定を最大20回まで）</li>
       <li>検索バーで、名前・メモ・カテゴリ・工程・優先度・期限から絞り込める</li>
-      <li>タスクに仕様書のリンク（https://）を付けると、カードに「📄 仕様書」が出る</li></ul></div>
+      <li>タスクに仕様書のリンク（https://）を付けると、カードに「📄 仕様書」が出る</li>
+      <li>サブタスクで小さなチェックリストを作れる。カードに「☑ 2/5」と出る</li>
+      <li>「先に終わらせたいタスク」を選ぶと、それが終わるまでカードに「🔒 待ち」が出る（動かせなくはならない）</li>
+      <li>タスク一覧の上の入力欄に、タイトルだけ書いて Enter で、すばやく追加できる</li>
+      <li>プレイテストの「直すこと」は、ボタンひとつでタスクにできる</li></ul></div>
     <div class="sec"><h4>期限と通知</h4><ul>
       <li>期限が3日以内（期限切れも含む）の未完了タスクが、ボードの上に出る</li>
       <li>設定の「デスクトップ通知」を許可すると、開いたときに通知される</li>
@@ -145,6 +156,11 @@
   </div>
 </section>
 
+<dialog id="pdlg">
+  <div id="pForm"></div>
+  <p class="err" id="pErr"></p>
+  <div class="row"><button class="pri" id="pSave">保存</button><button id="pCancel">キャンセル</button><button id="pDel">削除</button></div>
+</dialog>
 <dialog id="edlg">
   <div id="eMemBox"><p class="lb">誰の予定</p><select id="eMem"></select></div>
   <p class="lb">タイトル</p><input id="eTitle" placeholder="例：通院">
@@ -176,6 +192,8 @@
   <p class="lb">開始日</p><input id="fStart" type="date">
   <p class="lb">期限</p><input id="fDue" type="date">
   <p class="lb">仕様書リンク（任意・https:// から）</p><input id="fSpec" name="task-spec" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/...">
+  <p class="lb">サブタスク（小さなチェックリスト）</p><div id="fSubs"></div><div class="row"><input id="fSubIn" name="sub-add" autocomplete="off" placeholder="内容を入力して Enter"><button type="button" id="fSubAdd">追加</button></div>
+  <p class="lb">先に終わらせたいタスク（終わるまでカードに「🔒 待ち」が出る）</p><div id="fDeps" class="deps"></div>
   <p class="lb">メモ</p><textarea id="fMemo" rows="3"></textarea>
   <p class="err" id="err"></p>
   <div class="row"><button class="pri" id="save">保存</button><button id="cancel">キャンセル</button><button id="del">削除</button></div>

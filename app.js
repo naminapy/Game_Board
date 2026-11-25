@@ -1,5 +1,5 @@
 // ===== 設定値：ここを変えれば人数上限や選択肢を変更できるよ =====
-const APP_VERSION = "2026-11-25d"; // 更新のたびに変える目印（古い画面に「更新する」を出すために使う）
+const APP_VERSION = "2026-11-25e"; // 更新のたびに変える目印（古い画面に「更新する」を出すために使う）
 const MAX_MEMBERS = 15;
 const SIZE_WARN = 700 * 1024, SIZE_MAX = 1000 * 1024; // データの大きさの目安（GitHubで同期できるのは約1MBまで）
 const DUE_DAYS = 3; // 期限が「近い」とみなす日数（変えたい時はここの数字を書き換える）
@@ -38,6 +38,13 @@ function passes(t){
   return true;
 }
 const CARD_LIMIT = 50; // 1つの列に最初に出すカードの数（多いときは「さらに表示」で増やす）
+// 「待ち」の判定：先に終わらせたいタスクのうち、まだ終わっていないもの
+const blockers = (p, t) => t.status === "done" ? [] : (t.deps || []).map(id => p.tasks.find(x => x.id === id)).filter(x => x && !x.deleted && x.status !== "done");
+// 順番指定がぐるぐる回っていないか（Aは Bを待ち、BはAを待つ、など）を調べる
+function wouldCycle(p, id, deps){
+  const seen = new Set(), go = x => { if(x === id) return true; if(seen.has(x)) return false; seen.add(x); const t = p.tasks.find(y => y.id === x); return !!t && (t.deps || []).some(go); };
+  return deps.some(go);
+}
 let more = {}, feedShow = 30; const limitOf = k => CARD_LIMIT + (more[k] || 0);
 let hideDone = get("gtm-hidedone") === "1"; // 完了タスクを隠すか（自分のブラウザに記憶される）
 
@@ -83,6 +90,7 @@ function migrate(d){
     d.projects.forEach(p => (p.diary || []).forEach(x => { const i = (x.body || "").indexOf("【完了したタスク】"); if(i >= 0){ x.done = x.body.slice(i).split("\n").slice(1).filter(l => l.startsWith("・")).map(l => l.slice(1)); x.body = x.body.slice(0, i).trimEnd(); } }));
     d.v = 4;
   }
+  if(d.v < 5){ d.projects.forEach(p => { p.assets = p.assets || []; p.tests = p.tests || []; p.versions = p.versions || []; }); d.v = 5; } // v5：素材・プレイテスト・バージョンを追加（タスクのサブタスク/順番指定は、無くても動く）
   return d;
 }
 // 読み込んだJSONがちゃんとした形かを確かめる
@@ -99,7 +107,7 @@ function log(text){
 }
 // ===== 元に戻す（タスク・日記・予定の変更を、最大20回さかのぼれる） =====
 // 変更前の中身を、1件ずつ文字にして覚えておく。メンバーや目標などの変更は対象外
-const UNDO_KINDS = [["tasks","タスク"],["diary","日記"],["events","予定"]];
+const UNDO_KINDS = [["tasks","タスク"],["diary","日記"],["events","予定"],["assets","素材"],["tests","プレイテスト"],["versions","バージョン"]];
 let undoStack = [], lastSnap = {};
 const snapProject = p => { const o = {}; UNDO_KINDS.forEach(([k]) => { o[k] = {}; (p[k] || []).forEach(i => o[k][i.id] = JSON.stringify(i)); }); return o; };
 const snapAll = () => { lastSnap = {}; db.projects.forEach(p => lastSnap[p.id] = snapProject(p)); }; // 読み込み・同期のあとに、今の状態を「基準」にし直す
@@ -157,12 +165,14 @@ function render(){
 
   const today = ymd(new Date());
   const order = {high:0, mid:1, low:2};
+  const sub = t => (t.subs && t.subs.length) ? `<span class="tag" title="サブタスク">☑ ${t.subs.filter(s => s.done).length}/${t.subs.length}</span>` : "";
+  const wait = t => { const b = blockers(p, t); return b.length ? `<span class="tag" title="先に終わらせる：${esc(b.map(x => x.title).join("、"))}">🔒 待ち</span>` : ""; };
   $("board").innerHTML = STATUS.filter(s => !(hideDone && s[0] === "done")).map(([k,icon,label]) => {
     const list = p.tasks.filter(t => !t.deleted && t.status===k && (!filter || t.assignee===filter) && passes(t))
       .sort((a,b) => order[a.pri]-order[b.pri] || (a.due||"9").localeCompare(b.due||"9"));
     return `<div class="col" data-st="${k}"><h3><span>${icon} ${label}</span><span>${list.length}</span></h3><div class="list">` +
       (list.slice(0, limitOf(k)).map(t => `<div class="card" data-id="${t.id}" draggable="true" tabindex="0" role="group" aria-label="${esc(t.title)}"><b>${esc(t.title)}</b>
-        <div class="meta"><span class="tag">${esc(t.cat)}</span><span class="tag">優先 ${PRI[t.pri]}</span>${t.phase ? `<span class="tag">${esc(t.phase)}</span>` : ""}${t.est ? `<span class="tag">${t.est}h</span>` : ""}${/^https:\/\//i.test(t.spec || "") ? `<a class="tag" href="${esc(t.spec)}" target="_blank" rel="noopener" aria-label="仕様書を開く">📄 仕様書</a>` : ""}${solo ? "" : dot(p,t.assignee)}
+        <div class="meta"><span class="tag">${esc(t.cat)}</span><span class="tag">優先 ${PRI[t.pri]}</span>${t.phase ? `<span class="tag">${esc(t.phase)}</span>` : ""}${t.est ? `<span class="tag">${t.est}h</span>` : ""}${sub(t)}${wait(t)}${/^https:\/\//i.test(t.spec || "") ? `<a class="tag" href="${esc(t.spec)}" target="_blank" rel="noopener" aria-label="仕様書を開く">📄 仕様書</a>` : ""}${solo ? "" : dot(p,t.assignee)}
         ${t.due ? (t.due < today && t.status!=="done" ? `<span class="late">期限切れ ${esc(t.due)}</span>` : `<span>〜${esc(t.due)}</span>`) : ""}</div>
         <div class="mv"><button data-mv="-1" aria-label="左の列へ">◀</button><button data-mv="1" aria-label="右の列へ">▶</button></div></div>`).join("") || `<p class="sub">なし</p>`) + (list.length > limitOf(k) ? `<button class="more" data-more="${k}">さらに ${list.length - limitOf(k)}件を表示</button>` : "") + `</div></div>`;
   }).join("");
@@ -185,7 +195,7 @@ function render(){
   $("cnt").textContent = `(${p.members.length}/${MAX_MEMBERS})`;
   $("mem").innerHTML = p.members.map(m => `<div class="row" style="margin:2px 0">${dot(p,m.id)} ${esc(m.name)} <button data-rm="${m.id}" aria-label="${esc(m.name)}を削除">削除</button></div>`).join("");
   $("me").innerHTML = opts([["","未選択"], ...p.members.map(m => [m.name, m.name])], db.me);
-  renderAlert(); updateNotif(); renderReport(); renderMs(); backupNote(); renderTrash(); if(tab === "gantt") renderSched(); if(tab === "diary") renderDiary(); renderTpl(); applyTab(); applyStab();
+  renderAlert(); updateNotif(); renderReport(); renderMs(); backupNote(); renderTrash(); if(tab === "gantt") renderSched(); if(tab === "diary") renderDiary(); if(tab === "prod") renderProd(); renderTpl(); applyTab(); applyStab();
   // 個人/チームで表示を切り替える
   $("pMode").innerHTML = opts([["team","チーム"],["solo","個人"]], p.mode || "team");
   $("feedOn").checked = p.feedOn !== false;
@@ -202,6 +212,21 @@ function render(){
 }
 
 // ===== タスクの編集ダイアログ =====
+let eSubs = [], eDeps = []; // 編集中のサブタスクと、「先に終わらせる」タスクのID（保存するまで本体には入れない）
+function renderSubs(){
+  $("fSubs").innerHTML = eSubs.map((s, i) => `<div class="row subr"><input type="checkbox" data-sc="${i}"${s.done ? " checked" : ""} aria-label="完了"><input data-stx="${i}" value="${esc(s.t)}" aria-label="サブタスクの内容"><button type="button" data-sd="${i}" aria-label="削除">×</button></div>`).join("");
+}
+function renderDeps(){
+  const others = cur().tasks.filter(t => !t.deleted && t.id !== editing.id).sort((a, b) => (a.status === "done") - (b.status === "done"));
+  $("fDeps").innerHTML = others.map(t => `<label class="sub"><input type="checkbox" data-dp="${t.id}"${eDeps.includes(t.id) ? " checked" : ""}> ${esc(t.title)}${t.status === "done" ? "（完了）" : ""}</label>`).join("") || '<span class="sub">ほかのタスクがまだないよ</span>';
+}
+function addSub(){ const v = $("fSubIn").value.trim(); if(!v) return; eSubs.push({id:uid(), t:v, done:false}); $("fSubIn").value = ""; renderSubs(); }
+$("fSubAdd").onclick = addSub;
+$("fSubIn").onkeydown = e => { if(e.key === "Enter" && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); addSub(); } }; // 日本語の変換中の Enter は無視する
+$("fSubs").onchange = e => { const i = e.target.dataset.sc; if(i != null) eSubs[i].done = e.target.checked; };
+$("fSubs").oninput = e => { const i = e.target.dataset.stx; if(i != null) eSubs[i].t = e.target.value; };
+$("fSubs").onclick = e => { const i = e.target.dataset.sd; if(i != null){ eSubs.splice(i, 1); renderSubs(); } };
+$("fDeps").onchange = e => { const id = e.target.dataset.dp; if(!id) return; eDeps = e.target.checked ? [...eDeps, id] : eDeps.filter(x => x !== id); };
 function openEdit(id){
   const p = cur();
   editing = p.tasks.find(t => t.id === id) || {id:uid(), title:"", cat:catsOf(p)[1] || catsOf(p)[0], pri:"mid", status:"todo", assignee:"", due:"", memo:"", isNew:true};
@@ -210,6 +235,7 @@ function openEdit(id){
   $("fSt").innerHTML = opts(STATUS.map(s => [s[0], s[1]+" "+s[2]]), editing.status);
   $("fWho").innerHTML = opts([["","未定"], ...p.members.map(m => [m.id, m.name])], editing.assignee);
   $("fSpec").value = editing.spec || ""; $("fStart").value = editing.start || ""; $("fDue").value = editing.due; $("fMemo").value = editing.memo;
+  eSubs = JSON.parse(JSON.stringify(editing.subs || [])); eDeps = [...(editing.deps || [])]; $("fSubIn").value = ""; renderSubs(); renderDeps();
   $("err").textContent = ""; $("del").hidden = !!editing.isNew; $("dlg").showModal();
 }
 $("save").onclick = () => {
@@ -220,11 +246,15 @@ $("save").onclick = () => {
   const sp = $("fSpec").value.trim(); // 安全のため https:// のリンクだけ許可する
   if(sp && !/^https:\/\//i.test(sp)){ $("err").textContent = "仕様書リンクは https:// から始まるものだけ使えるよ"; return; }
   const p = cur(), t = editing, oldSt = t.status;
-  Object.assign(t, {title, cat:$("fCat").value, pri:$("fPri").value, status:$("fSt").value, assignee:$("fWho").value, phase:$("fPhase").value, est:Number($("fEst").value) || 0, spec:sp, start:$("fStart").value, due:$("fDue").value, memo:$("fMemo").value, updatedAt:Date.now(), updatedBy:db.me || ""});
+  const subs = eSubs.filter(s => s.t.trim()).map(s => ({id:s.id || uid(), t:s.t.trim(), done:!!s.done}));
+  const deps = eDeps.filter(id => p.tasks.some(x => x.id === id && !x.deleted));
+  if(wouldCycle(p, t.id, deps)){ $("err").textContent = "順番がぐるぐる回ってしまうよ（相手もこのタスクを待っている）"; return; }
+  Object.assign(t, {subs, deps, title, cat:$("fCat").value, pri:$("fPri").value, status:$("fSt").value, assignee:$("fWho").value, phase:$("fPhase").value, est:Number($("fEst").value) || 0, spec:sp, start:$("fStart").value, due:$("fDue").value, memo:$("fMemo").value, updatedAt:Date.now(), updatedBy:db.me || ""});
   let msg = `「${title}」を編集`;
   if(t.isNew){ delete t.isNew; p.tasks.push(t); msg = `「${title}」を追加`; }
   else if(oldSt !== t.status) msg = `「${title}」を ${STATUS.find(s=>s[0]===t.status)[2]} にした`;
   $("dlg").close(); commit(msg);
+  if(t.status === "done" && oldSt !== "done") celebrate();
 };
 $("cancel").onclick = () => $("dlg").close();
 $("del").onclick = () => { // 削除は「消した印」を付けるだけ（Gitで合流しても復活しにくい）
@@ -246,6 +276,7 @@ $("board").onclick = e => {
   const i = STATUS.findIndex(s => s[0] === t.status) + Number(mv.dataset.mv);
   if(i < 0 || i >= STATUS.length) return;
   t.status = STATUS[i][0]; t.updatedAt = Date.now(); t.updatedBy = db.me || ""; commit(`「${t.title}」を ${STATUS[i][2]} に移動`);
+  if(t.status === "done") celebrate();
 };
 $("chips").onclick = e => { const b = e.target.closest("[data-f]"); if(b){ filter = b.dataset.f; render(); } };
 $("prj").onchange = e => { db.current = e.target.value; filter = ""; F = {q:"", cat:"", ph:"", pri:"", due:""}; $("fq").value = ""; save(); render(); };
@@ -435,7 +466,7 @@ function renderSize(){
 $("sizeBox").onclick = e => { if(e.target.id === "sizeBk") saveBackupFile(); };
 // ゴミ箱の自動削除：削除から30日たったタスクを、データから完全に消す
 const TRASH_DAYS = 30;
-function purgeTrash(){ const lim = Date.now() - TRASH_DAYS * 864e5; db.projects.forEach(p => { p.tasks = p.tasks.filter(t => !(t.deleted && (t.updatedAt || 0) < lim)); p.diary = (p.diary || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim)); p.events = (p.events || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim)); }); }
+function purgeTrash(){ const lim = Date.now() - TRASH_DAYS * 864e5; db.projects.forEach(p => { p.tasks = p.tasks.filter(t => !(t.deleted && (t.updatedAt || 0) < lim)); p.diary = (p.diary || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim)); p.events = (p.events || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim)); ["assets","tests","versions"].forEach(k => p[k] = (p[k] || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim))); }); }
 // トークンの期限まで何日か（メモが無ければ null）
 const expDays = () => { const c = syncCfg(); return c.exp ? Math.ceil((new Date(c.exp + "T23:59:59") - new Date()) / 864e5) : null; };
 // ヘッダーの同期バッジ（状態：busy=同期中 / ok=同期済み / wait=同期待ち / warn=期限が近い / err=失敗）
@@ -455,7 +486,7 @@ const gh = (c, method, body) => fetch(`https://api.github.com/repos/${c.owner}/$
   headers: {Authorization: "Bearer " + c.token, Accept: "application/vnd.github+json", "Content-Type": "application/json"}});
 // 2つのデータを合わせる：タスクは1つずつ新しいほうを残す。設定などは新しく保存したほうを優先する
 // 同時編集のとき、どの項目が違ったかを知らせるための名前
-const CONF_FIELDS = [["title","名前"],["status","ステータス"],["due","期限"],["start","開始日"],["assignee","担当者"],["cat","カテゴリ"],["pri","優先度"],["phase","工程"],["est","見積時間"],["spec","仕様書リンク"],["memo","メモ"],["deleted","削除"]];
+const CONF_FIELDS = [["title","名前"],["status","ステータス"],["due","期限"],["start","開始日"],["assignee","担当者"],["cat","カテゴリ"],["pri","優先度"],["phase","工程"],["est","見積時間"],["spec","仕様書リンク"],["memo","メモ"],["subs","サブタスク"],["deps","先に終わらせるタスク"],["deleted","削除"]];
 function mergeDb(a, b, conf, since){ // a=この端末、b=クラウド、conf=同時編集の記録を入れる配列、since=前回の同期の時刻
   const newer = (a.mtime || 0) >= (b.mtime || 0) ? a : b, older = newer === a ? b : a, copy = x => JSON.parse(JSON.stringify(x));
   const dead = new Set([...(a.deletedProjects || []), ...(b.deletedProjects || [])]);
@@ -472,7 +503,7 @@ function mergeDb(a, b, conf, since){ // a=この端末、b=クラウド、conf=�
   out.projects.forEach(p => {
     p.members = p.members.filter(m => !gone[m.id]); p.milestones = (p.milestones || []).filter(m => !gone[m.id]);
     const o = older.projects.find(x => x.id === p.id); if(!o) return;
-    p.tasks = byTime(p.tasks, o.tasks, (w, l) => conf && conf.push({pid:p.id, id:w.id, title:w.title, lose:copy(l), diff:CONF_FIELDS.filter(([k]) => JSON.stringify(w[k] ?? "") !== JSON.stringify(l[k] ?? "")).map(f => f[0])})); p.diary = byTime(p.diary || [], o.diary || []); p.events = byTime(p.events || [], o.events || []); // タスクと日記は1件ずつ // タスクは1件ずつ、メンバーと目標は両方を合わせる
+    p.tasks = byTime(p.tasks, o.tasks, (w, l) => conf && conf.push({pid:p.id, id:w.id, title:w.title, lose:copy(l), diff:CONF_FIELDS.filter(([k]) => JSON.stringify(w[k] ?? "") !== JSON.stringify(l[k] ?? "")).map(f => f[0])})); p.diary = byTime(p.diary || [], o.diary || []); p.events = byTime(p.events || [], o.events || []); ["assets","tests","versions"].forEach(k => p[k] = byTime(p[k] || [], o[k] || [])); // 制作管理の3つも1件ずつ // タスクと日記は1件ずつ // タスクは1件ずつ、メンバーと目標は両方を合わせる
     p.members = union(o.members, p.members); p.milestones = union(o.milestones || [], p.milestones || []);
     const seen = new Set(); // 更新フィードは両方を合わせて、重複を消して新しい順に100件
     p.feed = [...p.feed, ...o.feed].filter(f => { const k = f.t + f.who + f.text; return seen.has(k) ? false : seen.add(k); }).sort((x, y) => y.t - x.t).slice(0, 100);
@@ -486,7 +517,7 @@ function addConf(list){
   const cur0 = confList(); list.forEach(c => { if(!cur0.some(x => x.id === c.id && x.lose.updatedAt === c.lose.updatedAt)) cur0.push(c); });
   set("gtm-conf", JSON.stringify(cur0.slice(-20)));
 }
-const confVal = (p, k, v) => k === "status" ? ((STATUS.find(s => s[0] === v) || [])[2] || v) : k === "assignee" ? ((p.members.find(m => m.id === v) || {}).name || "未定") : k === "pri" ? (PRI[v] || v) : k === "deleted" ? (v ? "削除済み" : "削除なし") : (v === "" || v == null ? "なし" : String(v));
+const confVal = (p, k, v) => (k === "subs" || k === "deps") ? (Array.isArray(v) && v.length ? v.length + "件" : "なし") : k === "status" ? ((STATUS.find(s => s[0] === v) || [])[2] || v) : k === "assignee" ? ((p.members.find(m => m.id === v) || {}).name || "未定") : k === "pri" ? (PRI[v] || v) : k === "deleted" ? (v ? "削除済み" : "削除なし") : (v === "" || v == null ? "なし" : String(v));
 function renderConf(){
   const list = confList().filter(c => db.projects.some(p => p.id === c.pid && p.tasks.some(t => t.id === c.id)));
   $("confBox").hidden = !list.length;
@@ -714,7 +745,7 @@ function applyTab(){
 $("tabs").onclick = e => {
   const b = e.target.closest("[data-tab]"); if(!b) return;
   tab = b.dataset.tab; set("gtm-tab", tab); applyTab();
-  if(tab === "gantt") renderSched(); if(tab === "diary") renderDiary(); // 表示されたときに幅を測り直す・日記を描く
+  if(tab === "gantt") renderSched(); if(tab === "diary") renderDiary(); if(tab === "prod") renderProd(); // 表示されたときに幅を測り直す・日記を描く
 };
 addEventListener("resize", () => { if(tab === "gantt") renderGantt(); });
 
@@ -735,7 +766,7 @@ function renderGantt(){
   const head = Array.from({length:n}, (_, i) => { const d = new Date(+from + i * D), wk = d.getDay() === 0 || d.getDay() === 6;
     return `<span class="gd${wk ? " we" : ""}" style="width:${W}px">${d.getDate() === 1 || i === 0 ? (d.getMonth() + 1) + "/" : ""}${d.getDate()}</span>`; }).join("");
   const rows = ts.map(t => { const s = idx(parse(t.start || t.due)), e = idx(parse(t.due)), late = t.due < ymd(today) && t.status !== "done";
-    return `<div class="gr"><span class="gl" title="${esc(t.title)}">${p.mode !== "solo" && p.members.some(m => m.id === t.assignee) ? dot(p, t.assignee) : ""}${STATUS.find(x => x[0] === t.status)[1]} ${esc(t.title)}</span><div class="gt" style="width:${n * W}px"><div class="gb s-${t.status}${late ? " glate" : ""}" data-id="${t.id}" tabindex="0" role="button" aria-label="${esc(t.title)} 〜${t.due}" style="left:${s * W}px;width:${(e - s + 1) * W - 2}px${p.mode !== "solo" && p.members.some(m => m.id === t.assignee) ? ";box-shadow:inset 5px 0 0 " + memColor(p, t.assignee) : ""}"></div></div></div>`; }).join("");
+    return `<div class="gr"><span class="gl" title="${esc(t.title)}">${p.mode !== "solo" && p.members.some(m => m.id === t.assignee) ? dot(p, t.assignee) : ""}${STATUS.find(x => x[0] === t.status)[1]} ${blockers(p, t).length ? "🔒 " : ""}${esc(t.title)}</span><div class="gt" style="width:${n * W}px"><div class="gb s-${t.status}${late ? " glate" : ""}" data-id="${t.id}" tabindex="0" role="button" aria-label="${esc(t.title)} 〜${t.due}" style="left:${s * W}px;width:${(e - s + 1) * W - 2}px${p.mode !== "solo" && p.members.some(m => m.id === t.assignee) ? ";box-shadow:inset 5px 0 0 " + memColor(p, t.assignee) : ""}"></div></div></div>`; }).join("");
   // 縦線（目標は点線、今日は実線）
   const line = (cls, d, label) => `<div class="${cls}" style="left:${LW + idx(d) * W + W / 2}px">${label ? `<span>${esc(label)}</span>` : ""}</div>`;
   box.innerHTML = `<div style="position:relative;width:${LW + n * W}px"><div class="gr"><span class="gl"></span><div class="gt" style="width:${n * W}px">${head}</div></div>${rows}` +
@@ -839,6 +870,120 @@ $("board").onkeydown = e => {
 };
 
 // ===== ドラッグ＆ドロップでカードを別の列へ移動（PC用。スマホは ◀ ▶ ボタン） =====
+
+// ===== すばやく追加（タイトルだけ入れて Enter） =====
+$("qin").onkeydown = e => {
+  if(e.key !== "Enter" || e.isComposing || e.keyCode === 229) return; // 日本語の変換を決める Enter では追加しない
+  const title = e.target.value.trim(); if(!title) return;
+  const p = cur(), me = p.members.find(m => m.name === db.me); // 名前を選んでいれば、その人の担当にする
+  p.tasks.push({id:uid(), title, cat:catsOf(p)[1] || catsOf(p)[0], pri:"mid", status:"todo", assignee:me ? me.id : "", due:"", memo:"", updatedAt:Date.now(), updatedBy:db.me || ""});
+  e.target.value = ""; commit(`「${title}」を追加`);
+  $("qin").focus(); // 続けて入力できるように
+};
+
+// ===== タスク完了のごほうび演出 =====
+function celebrate(){
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches) return; // 「動きを減らす」設定の人には出さない
+  const box = document.createElement("div"); box.className = "party"; box.setAttribute("aria-hidden", "true");
+  const em = ["✨", "🎉", "⭐", "💚"];
+  for(let i = 0; i < 14; i++){
+    const s = document.createElement("span"); s.textContent = em[i % em.length];
+    s.style.setProperty("--x", (Math.random() * 200 - 100) + "px"); s.style.setProperty("--y", (-60 - Math.random() * 140) + "px");
+    s.style.left = (35 + Math.random() * 30) + "%"; s.style.animationDelay = (Math.random() * .25) + "s"; box.appendChild(s);
+  }
+  document.body.appendChild(box); setTimeout(() => box.remove(), 1500);
+}
+
+// ===== 制作管理タブ（素材リスト・プレイテスト記録・バージョン履歴） =====
+// 3つとも同じしくみで動く：PK に「項目の一覧」を書いておくと、一覧・追加・編集の画面が自動でできる
+// 項目の型：text=1行 / area=複数行 / date=日付 / sel=選択 / url=リンク(https://のみ) / who=担当者(チームのみ)
+const ASSET_ST = [["none","未依頼"],["ask","依頼中"],["got","納品済"],["in","組み込み済"]];
+const ASSET_KIND = [["art","🎨 絵"],["sound","🔊 音・BGM"],["model","🧊 モデル"],["ui","🖼 UI"],["other","📦 その他"]];
+const PK = {
+  assets:{label:"素材", fields:[["name","名前","text","例：スライムの歩きアニメ"],["kind","種類","sel",ASSET_KIND],["status","状態","sel",ASSET_ST],["who","担当（作る人）","who"],["link","ファイルのリンク（任意・https://）","url"],["memo","メモ","area"]],
+    init:() => ({kind:"art", status:"none"}), title:i => i.name, check:i => i.name ? "" : "名前を入力してね"},
+  tests:{label:"プレイテスト", fields:[["date","遊んだ日","date"],["who","遊んでくれた人","text"],["notes","感想・気づいたこと","area"],["fixes","直すこと（1行に1つ。あとでタスクにできる）","area"]],
+    init:() => ({date:ymd(new Date())}), title:i => `${i.date} ${i.who || ""}`.trim(), check:i => !i.date ? "日付を入れてね" : (i.who || i.notes || i.fixes) ? "" : "人・感想・直すこと のどれかは書いてね"},
+  versions:{label:"バージョン", fields:[["name","バージョン名","text","例：α版 v0.1"],["date","日付","date"],["notes","変更点（1行に1つ）","area"],["link","ビルドのリンク（任意・https://）","url"]],
+    init:() => ({date:ymd(new Date())}), title:i => i.name, check:i => i.name ? "" : "バージョン名を入力してね"}
+};
+let pk = get("gtm-pk") in PK ? get("gtm-pk") : "assets", editingP = null;
+const pItems = k => (cur()[k] || []).filter(i => !i.deleted);
+function renderProd(){
+  const p = cur(), solo = p.mode === "solo", K = PK[pk];
+  $("pSw").innerHTML = Object.entries(PK).map(([k, v]) => `<button class="chip${k === pk ? " on" : ""}" data-pk="${k}">${v.label}（${pItems(k).length}）</button>`).join("");
+  $("pAdd").textContent = `＋ ${K.label}を追加`;
+  const items = pItems(pk), who = i => !solo && p.members.some(m => m.id === i.who) ? dot(p, i.who) : "", link = i => /^https:\/\//i.test(i.link || "") ? `<a class="tag" href="${esc(i.link)}" target="_blank" rel="noopener">🔗 リンク</a>` : "";
+  let html = "";
+  if(pk === "assets"){
+    const n = s => items.filter(i => i.status === s).length;
+    $("pSum").textContent = items.length ? `組み込み済 ${n("in")}/${items.length}件（` + ASSET_ST.map(([s, l]) => `${l} ${n(s)}`).join(" ・ ") + "）" : "";
+    html = items.slice().sort((a, b) => ASSET_ST.findIndex(s => s[0] === a.status) - ASSET_ST.findIndex(s => s[0] === b.status) || a.name.localeCompare(b.name, "ja")).map(i => {
+      const si = ASSET_ST.findIndex(s => s[0] === i.status), nx = ASSET_ST[si + 1];
+      return `<div class="pcard" data-pid="${i.id}" tabindex="0" role="button" aria-label="${esc(i.name)}を編集"><b>${esc(i.name)}</b><div class="meta"><span class="tag">${esc((ASSET_KIND.find(k => k[0] === i.kind) || ["", "📦"])[1])}</span><span class="tag">${esc(ASSET_ST[si < 0 ? 0 : si][1])}</span>${who(i)}${link(i)}${nx ? `<button data-pnext="${i.id}" aria-label="状態を「${nx[1]}」にする">→ ${nx[1]}</button>` : ""}</div>${i.memo ? `<div class="sub">${esc(i.memo)}</div>` : ""}</div>`;
+    }).join("");
+  } else if(pk === "tests"){
+    $("pSum").textContent = items.length ? `${items.length}回ぶんの記録` : "";
+    html = items.slice().sort((a, b) => b.date.localeCompare(a.date)).map(i => {
+      const fx = (i.fixes || "").split("\n").filter(s => s.trim()).length;
+      return `<div class="pcard" data-pid="${i.id}" tabindex="0" role="button" aria-label="${esc(PK.tests.title(i))}を編集"><b>${esc(i.date)} ${esc(i.who || "")}</b>${i.notes ? `<div class="sub">${esc(i.notes)}</div>` : ""}<div class="meta">${fx ? `<span class="tag">直すこと ${fx}件</span>` + (i.tasked ? `<span class="tag">✓ タスク化済み</span>` : `<button data-ptask="${i.id}">タスクにする</button>`) : ""}</div></div>`;
+    }).join("");
+  } else {
+    $("pSum").textContent = "";
+    html = items.slice().sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || 0) - (a.updatedAt || 0)).map(i => {
+      const ls = (i.notes || "").split("\n").map(s => s.trim()).filter(Boolean);
+      return `<div class="pcard" data-pid="${i.id}" tabindex="0" role="button" aria-label="${esc(i.name)}を編集"><b>${esc(i.name)}</b> <span class="sub">${esc(i.date)}</span> ${link(i)}${ls.length ? `<ul>${ls.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}</div>`;
+    }).join("");
+  }
+  $("pList").innerHTML = html || `<p class="sub">まだないよ。「＋ ${K.label}を追加」から作ろう。</p>`;
+}
+function openProd(id){
+  const K = PK[pk], p = cur(), solo = p.mode === "solo";
+  const it = (p[pk] || []).find(x => x.id === id) || {id:uid(), ...K.init(), isNew:true};
+  editingP = {k:pk, it};
+  $("pForm").innerHTML = K.fields.filter(f => !(f[2] === "who" && solo)).map(([key, label, type, extra]) => {
+    const v = it[key] ?? "", id = "pf_" + key;
+    const ctl = type === "area" ? `<textarea id="${id}" rows="4">${esc(v)}</textarea>`
+      : type === "sel" ? `<select id="${id}">${opts(extra, v)}</select>`
+      : type === "who" ? `<select id="${id}">${opts([["", "未定"], ...p.members.map(m => [m.id, m.name])], v)}</select>`
+      : `<input id="${id}" type="${type === "date" ? "date" : "text"}" autocomplete="off" placeholder="${esc(type === "url" ? "https://..." : extra || "")}" value="${esc(v)}">`;
+    return `<p class="lb">${esc(label)}</p>${ctl}`;
+  }).join("");
+  $("pErr").textContent = ""; $("pDel").hidden = !!it.isNew; $("pdlg").showModal();
+}
+$("pSave").onclick = () => {
+  const {k, it} = editingP, K = PK[k], vals = {};
+  for(const [key, , type] of K.fields){
+    const el = $("pf_" + key); if(!el) continue; vals[key] = el.value.trim();
+    if(type === "url" && vals[key] && !/^https:\/\//i.test(vals[key])){ $("pErr").textContent = "リンクは https:// から始まるものだけ使えるよ"; return; } // 安全のため
+  }
+  const err = K.check({...it, ...vals}); if(err){ $("pErr").textContent = err; return; }
+  if(k === "tests" && (it.fixes || "") !== vals.fixes) it.tasked = false; // 直すことを書き換えたら、またタスクにできるように
+  Object.assign(it, vals, {updatedAt:Date.now(), updatedBy:db.me || ""});
+  const p = cur(), isNew = it.isNew; if(isNew){ delete it.isNew; (p[k] = p[k] || []).push(it); }
+  $("pdlg").close(); commit(`${K.label}「${K.title(it)}」を${isNew ? "追加" : "編集"}`);
+};
+$("pCancel").onclick = () => $("pdlg").close();
+$("pDel").onclick = () => { const {k, it} = editingP; it.deleted = true; it.updatedAt = Date.now(); it.updatedBy = db.me || ""; $("pdlg").close(); commit(`${PK[k].label}「${PK[k].title(it)}」を削除`); };
+$("pAdd").onclick = () => openProd();
+$("pSw").onclick = e => { const b = e.target.closest("[data-pk]"); if(b){ pk = b.dataset.pk; set("gtm-pk", pk); renderProd(); } };
+$("pList").onclick = e => {
+  const p = cur(), nx = e.target.closest("[data-pnext]"), tk = e.target.closest("[data-ptask]");
+  if(nx){ const it = p.assets.find(x => x.id === nx.dataset.pnext), i = ASSET_ST.findIndex(s => s[0] === it.status); if(!ASSET_ST[i + 1]) return; it.status = ASSET_ST[i + 1][0]; it.updatedAt = Date.now(); it.updatedBy = db.me || ""; return commit(`素材「${it.name}」を ${ASSET_ST[i + 1][1]} にした`); }
+  if(tk) return testToTasks(p.tests.find(x => x.id === tk.dataset.ptask));
+  if(e.target.closest("a")) return; // リンクを押したときは編集画面を開かない
+  const c = e.target.closest("[data-pid]"); if(c) openProd(c.dataset.pid);
+};
+$("pList").onkeydown = e => { const c = e.target.closest("[data-pid]"); if(e.key === "Enter" && c && e.target === c){ e.preventDefault(); openProd(c.dataset.pid); } };
+// プレイテストの「直すこと」を、1行ずつタスクにする
+function testToTasks(it){
+  const p = cur(), lines = (it.fixes || "").split("\n").map(s => s.trim()).filter(Boolean); if(!it || !lines.length || it.tasked) return;
+  const me = p.members.find(m => m.name === db.me), now = Date.now();
+  lines.forEach(l => p.tasks.push({id:uid(), title:"【テスト】" + l, cat:catsOf(p)[1] || catsOf(p)[0], pri:"mid", status:"todo", assignee:me ? me.id : "", due:"", memo:`プレイテスト（${it.date} ${it.who || ""}）より`, updatedAt:now, updatedBy:db.me || ""}));
+  it.tasked = true; it.updatedAt = now; it.updatedBy = db.me || "";
+  commit(`プレイテスト（${it.date}）から ${lines.length}件のタスクを作った`);
+}
+
 let dragId = null;
 $("board").ondragstart = e => { const c = e.target.closest(".card"); if(c){ dragId = c.dataset.id; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragId); } };
 $("board").ondragover = e => { if(dragId && e.target.closest(".col")) e.preventDefault(); }; // 「ここに置いていいよ」の合図
@@ -848,6 +993,7 @@ $("board").ondrop = e => {
   if(!t || t.status === st) return;
   t.status = st; t.updatedAt = Date.now(); t.updatedBy = db.me || "";
   commit(`「${t.title}」を ${STATUS.find(s => s[0] === st)[2]} に移動`);
+  if(st === "done") celebrate();
 };
 $("board").ondragend = () => { dragId = null; };
 
