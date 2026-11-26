@@ -151,8 +151,16 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
 /* 画面がせまいときは、タブを2段に折り返して全部見えるようにする */
 @media (max-width:520px){.tabs{flex-wrap:wrap}.tabs button{flex:1 1 30%}}
 #pSw{flex-wrap:wrap}
-/* 作業の流れ（GitHub Desktop のやることリスト） */
-.wstep{display:flex;gap:8px;align-items:flex-start;padding:8px 6px;border-top:1px dashed var(--bd)}
-.wstep>button:first-child{flex:none;font-size:18px;line-height:1;padding:4px 8px}
-.wstep.ok b{opacity:.65}
-.wstep.next{background:color-mix(in srgb,var(--ac) 12%,transparent);border-radius:10px}
+/* 段階の図（○→○→○ と増えていく） */
+.wline{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:10px 0 6px}
+.wn{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:44px}
+.wn small{font-size:11px;color:var(--sub);white-space:nowrap}
+.wc{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:var(--ac);color:var(--on);font-size:14px;font-weight:700}
+.wc.last{box-shadow:0 0 0 3px color-mix(in srgb,var(--ac) 30%,transparent)}
+.wa{color:var(--sub);margin-bottom:14px}
+.wdots{color:var(--sub);letter-spacing:2px;margin-bottom:14px}
+.wnow{margin-top:8px;padding:10px;border-radius:12px;background:color-mix(in srgb,var(--ac) 12%,transparent)}
+.wnow label{display:block;margin-top:8px}
+.wnow input,.wnow textarea{width:100%}
+/* せまい画面でも、5つの○が1行に収まるようにする */
+.wline{gap:2px}.wn{min-width:0;padding:0 2px}.wn small{font-size:10px}.wa{margin-left:-2px;margin-right:-2px}

@@ -1,5 +1,5 @@
 // ===== 設定値：ここを変えれば人数上限や選択肢を変更できるよ =====
-const APP_VERSION = "2026-11-26a"; // 更新のたびに変える目印（古い画面に「更新する」を出すために使う）
+const APP_VERSION = "2026-11-26b"; // 更新のたびに変える目印（古い画面に「更新する」を出すために使う）
 const MAX_MEMBERS = 15;
 const SIZE_WARN = 700 * 1024, SIZE_MAX = 1000 * 1024; // データの大きさの目安（GitHubで同期できるのは約1MBまで）
 const DUE_DAYS = 3; // 期限が「近い」とみなす日数（変えたい時はここの数字を書き換える）
@@ -927,13 +927,9 @@ function renderProd(){
   let html = "";
   if(pk === "sessions"){
     const open = items.filter(i => !(i.steps || {}).end), closed = items.filter(i => (i.steps || {}).end);
-    const tm = ts => new Date(ts).toLocaleString("ja-JP", {month:"numeric", day:"numeric", hour:"2-digit", minute:"2-digit"});
-    $("pSum").textContent = open.length ? "" : "いまの作業はないよ。「作業を始める」から、フェッチ→報告→コミット→プルリク→終了報告の流れを進められる。";
-    html = open.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).map(i => {
-      const s = i.steps || {}, done = WSTEPS.filter(w => s[w[0]]).length, nextKey = (WSTEPS.find(w => !s[w[0]]) || [])[0];
-      return `<div class="pcard" data-pid="${i.id}"><div class="row"><b style="flex:1">${esc(i.goal || "（今日やることなし）")}</b><button data-pid="${i.id}">編集</button></div><div class="meta">${i.branch ? `<span class="tag">🌿 ${esc(i.branch)}</span>` : ""}<span class="tag">${done}/${WSTEPS.length} 完了</span>${who(i)}</div>` +
-        WSTEPS.map(([k, ic, lb, hint]) => `<div class="wstep${s[k] ? " ok" : ""}${k === nextKey ? " next" : ""}"><button data-wstep="${i.id}:${k}" aria-pressed="${!!s[k]}" aria-label="${lb}を${s[k] ? "未完了に戻す" : "完了にする"}">${s[k] ? "☑" : "☐"}</button><div style="flex:1;min-width:0"><b>${ic} ${lb}</b>${s[k] ? ` <span class="sub">${tm(s[k])}</span>` : k === nextKey ? ` <span class="tag">← 次はここ</span>` : ""}${(k === "start" || k === "end") ? ` <button data-wcopy="${i.id}:${k}">報告文をコピー</button>` : ""}<div class="sub">${esc(k === "commit" && i.commitMsg ? "メッセージ：" + i.commitMsg : hint)}</div>${k === "pr" && /^https:\/\//i.test(i.prUrl || "") ? `<a class="tag" href="${esc(i.prUrl)}" target="_blank" rel="noopener">🔗 プルリクを開く</a>` : ""}</div></div>`).join("") + `</div>`;
-    }).join("") + (closed.length ? `<h4 style="margin:14px 0 4px">終わった作業（${closed.length}件）</h4>` + closed.slice().sort((a, b) => b.steps.end - a.steps.end).slice(0, 30).map(i => `<div class="pcard" data-pid="${i.id}" tabindex="0" role="button" aria-label="${esc(PK.sessions.title(i))}を編集"><b>${esc(i.goal || i.branch || "作業")}</b> <span class="sub">${esc(i.date)}</span><div class="meta">${i.branch ? `<span class="tag">🌿 ${esc(i.branch)}</span>` : ""}${who(i)}${/^https:\/\//i.test(i.prUrl || "") ? `<a class="tag" href="${esc(i.prUrl)}" target="_blank" rel="noopener">🔗 プルリク</a>` : ""}<button data-wcopy="${i.id}:end">終了の報告文をコピー</button><button data-wreopen="${i.id}">作業に戻す</button></div></div>`).join("") : "");
+    $("pSum").textContent = open.length ? "" : "いまの作業はないよ。「作業を始める」を押すと、1つずつ段階を進められる。";
+    html = open.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).map(i => workCard(i, who(i))).join("") +
+      (closed.length ? `<h4 style="margin:14px 0 4px">終わった作業（${closed.length}件）</h4>` + closed.slice().sort((a, b) => b.steps.end - a.steps.end).slice(0, 30).map(i => `<div class="pcard" data-pid="${i.id}" tabindex="0" role="button" aria-label="${esc(PK.sessions.title(i))}を編集"><b>${esc(i.goal || i.branch || "作業")}</b> <span class="sub">${esc(i.date)}</span>${wline(i.steps || {})}<div class="meta">${i.branch ? `<span class="tag">🌿 ${esc(i.branch)}</span>` : ""}${who(i)}${/^https:\/\//i.test(i.prUrl || "") ? `<a class="tag" href="${esc(i.prUrl)}" target="_blank" rel="noopener">🔗 プルリク</a>` : ""}<button data-wcopy="${i.id}:end">終了の報告文をコピー</button><button data-wreopen="${i.id}">作業に戻す</button></div></div>`).join("") : "");
   } else if(pk === "assets"){
     const n = s => items.filter(i => i.status === s).length;
     $("pSum").textContent = items.length ? `組み込み済 ${n("in")}/${items.length}件（` + ASSET_ST.map(([s, l]) => `${l} ${n(s)}`).join(" ・ ") + "）" : "";
@@ -984,20 +980,62 @@ $("pSave").onclick = () => {
 };
 $("pCancel").onclick = () => $("pdlg").close();
 $("pDel").onclick = () => { const {k, it} = editingP; it.deleted = true; it.updatedAt = Date.now(); it.updatedBy = db.me || ""; $("pdlg").close(); commit(`${PK[k].label}「${PK[k].title(it)}」を削除`); };
-$("pAdd").onclick = () => openProd();
+$("pAdd").onclick = () => {
+  if(pk !== "sessions") return openProd();
+  const it = {id:uid(), ...PK.sessions.init(), updatedAt:Date.now(), updatedBy:db.me || ""}; (cur().sessions = cur().sessions || []).push(it); // 入力は、段階ごとに行う
+  commit("作業を始めた");
+};
 $("pSw").onclick = e => { const b = e.target.closest("[data-pk]"); if(b){ pk = b.dataset.pk; set("gtm-pk", pk); renderProd(); } };
 $("pList").onclick = e => {
   const p = cur(), nx = e.target.closest("[data-pnext]"), tk = e.target.closest("[data-ptask]");
   if(nx){ const it = p.assets.find(x => x.id === nx.dataset.pnext), i = ASSET_ST.findIndex(s => s[0] === it.status); if(!ASSET_ST[i + 1]) return; it.status = ASSET_ST[i + 1][0]; it.updatedAt = Date.now(); it.updatedBy = db.me || ""; return commit(`素材「${it.name}」を ${ASSET_ST[i + 1][1]} にした`); }
   if(tk) return testToTasks(p.tests.find(x => x.id === tk.dataset.ptask));
-  const st = e.target.closest("[data-wstep]"), cp = e.target.closest("[data-wcopy]"), ro = e.target.closest("[data-wreopen]");
-  if(st){ const [id, k] = st.dataset.wstep.split(":"), it = (p.sessions || []).find(x => x.id === id); if(!it) return; it.steps = it.steps || {}; const on = !it.steps[k]; it.steps[k] = on ? Date.now() : 0; it.updatedAt = Date.now(); it.updatedBy = db.me || ""; return commit(`作業「${PK.sessions.title(it)}」：${WSTEPS.find(w => w[0] === k)[2]}を${on ? "完了" : "取り消し"}`); }
-  if(ro){ const it = (p.sessions || []).find(x => x.id === ro.dataset.wreopen); if(!it) return; it.steps.end = 0; it.updatedAt = Date.now(); it.updatedBy = db.me || ""; return commit(`作業「${PK.sessions.title(it)}」を作業中に戻した`); }
-  if(cp){ const [id, k] = cp.dataset.wcopy.split(":"), it = (p.sessions || []).find(x => x.id === id); if(it) copyText(workReport(it, k), cp); return; }
+  const st = e.target.closest("[data-wstep]"), cp = e.target.closest("[data-wcopy]"), ro = e.target.closest("[data-wreopen]"), bk = e.target.closest("[data-wback]");
+  const sessOf = id => (p.sessions || []).find(x => x.id === id);
+  if(st){ // 段階を1つ進める（その段階の入力欄の中身も、ここで一緒に保存する）
+    const [id, k] = st.dataset.wstep.split(":"), it = sessOf(id); if(!it) return;
+    if(!saveWorkInputs(st.closest(".pcard"), it)) return;
+    it.steps = it.steps || {}; it.steps[k] = Date.now(); it.updatedAt = Date.now(); it.updatedBy = db.me || "";
+    commit(`作業「${PK.sessions.title(it)}」：${WSTEPS.find(w => w[0] === k)[2]}を完了`); if(k === "end") celebrate(); return;
+  }
+  if(bk){ const it = sessOf(bk.dataset.wback); if(!it) return; const last = WSTEPS.filter(w => (it.steps || {})[w[0]]).pop(); if(!last) return; it.steps[last[0]] = 0; it.updatedAt = Date.now(); it.updatedBy = db.me || ""; return commit(`作業「${PK.sessions.title(it)}」：${last[2]}を取り消し`); }
+  if(ro){ const it = sessOf(ro.dataset.wreopen); if(!it) return; it.steps.end = 0; it.updatedAt = Date.now(); it.updatedBy = db.me || ""; return commit(`作業「${PK.sessions.title(it)}」を作業中に戻した`); }
+  if(cp){ const [id, k] = cp.dataset.wcopy.split(":"), it = sessOf(id); if(it){ saveWorkInputs(cp.closest(".pcard"), it); copyText(workReport(it, k), cp); } return; }
   if(e.target.closest("a")) return; // リンクを押したときは編集画面を開かない
   const c = e.target.closest("[data-pid]"); if(c) openProd(c.dataset.pid);
 };
 $("pList").onkeydown = e => { const c = e.target.closest("[data-pid]"); if(e.key === "Enter" && c && e.target === c){ e.preventDefault(); openProd(c.dataset.pid); } };
+// 段階の図：終わった段階だけ ○ が増えていく（まだの段階は「・・・＞」）
+const WSHORT = {fetch:"フェッチ", start:"開始報告", commit:"コミット", pr:"プルリク", end:"終了報告"};
+function wline(s){
+  const done = WSTEPS.filter(w => s[w[0]]), all = done.length === WSTEPS.length;
+  return `<div class="wline" role="img" aria-label="進み具合：${done.length}/${WSTEPS.length}段階が完了">` +
+    done.map((w, n) => `<div class="wn"><span class="wc${n === done.length - 1 ? " last" : ""}">✓</span><small>${WSHORT[w[0]]}</small></div>` + (n < done.length - 1 || !all ? `<span class="wa">→</span>` : "")).join("") +
+    (all ? "" : `<span class="wdots">・・・＞</span>`) + `</div>`;
+}
+// いま作業中のカード：図 ＋ 「いまの段階」だけを大きく出す（入力も、その段階の分だけ）
+function workCard(i, whoDot){
+  const s = i.steps || {}, cur = WSTEPS.find(w => !s[w[0]]), k = cur ? cur[0] : "", n = WSTEPS.filter(w => s[w[0]]).length;
+  const inp = (key, label, ph) => `<label class="sub">${label}</label><input data-wf="${key}:${i.id}" autocomplete="off" placeholder="${esc(ph || "")}" value="${esc(i[key] || "")}">`;
+  const area = (key, label, ph) => `<label class="sub">${label}</label><textarea data-wf="${key}:${i.id}" rows="3" placeholder="${esc(ph || "")}">${esc(i[key] || "")}</textarea>`;
+  const fields = {start:inp("goal", "今日やること", "例：ジャンプの挙動を直す") + inp("branch", "ブランチ名（GitHub Desktop の Current Branch）", "例：feature/jump"), commit:inp("commitMsg", "コミットのメッセージ（Summary）", "例：ジャンプの高さを調整"), pr:inp("prUrl", "プルリクのリンク（作ったあとに貼る・任意）", "https://github.com/..."), end:area("summary", "やったこと（終了の報告に入る）", "例：ジャンプを直して、穴の判定も調整した")}[k] || "";
+  const label = {fetch:"フェッチした", start:"報告した", commit:"コミットした", pr:"プルリクを作った", end:"終了を報告した"}[k];
+  return `<div class="pcard"><div class="row"><b style="flex:1">${esc(i.goal || "新しい作業")}</b><button data-pid="${i.id}">編集</button></div>${i.branch ? `<div class="meta"><span class="tag">🌿 ${esc(i.branch)}</span>${whoDot}</div>` : ""}${wline(s)}` +
+    (cur ? `<div class="wnow"><div><b>${cur[1]} いまここ：${cur[2]}</b> <span class="sub">（${n + 1}/${WSTEPS.length}）</span></div><div class="sub">${esc(cur[3])}</div>${fields}` +
+      `<div class="row" style="margin-top:8px">${(k === "start" || k === "end") ? `<button data-wcopy="${i.id}:${k}">報告文をコピー</button>` : ""}<button class="pri" data-wstep="${i.id}:${k}">○ ${label}</button>${n ? `<button data-wback="${i.id}" aria-label="一つ前の段階に戻す">↩ 一つ前へ</button>` : ""}</div></div>` : "") + `</div>`;
+}
+// カード内の入力欄の中身を、作業データに保存する（リンクは https:// だけ許可）。問題なければ true
+function saveWorkInputs(card, it){
+  if(!card) return true; let ok = true, ch = false;
+  card.querySelectorAll("[data-wf]").forEach(el => {
+    const key = el.dataset.wf.split(":")[0], v = el.value.trim();
+    if(key === "prUrl" && v && !/^https:\/\//i.test(v)){ el.value = it.prUrl || ""; el.placeholder = "https:// から始まるリンクだけ使えるよ"; ok = false; return; }
+    if((it[key] || "") !== v){ it[key] = v; ch = true; }
+  });
+  if(ch){ it.updatedAt = Date.now(); it.updatedBy = db.me || ""; save(); } // 入力のたびに画面は描き直さない（入力が途切れないように）
+  return ok;
+}
+$("pList").addEventListener("change", e => { if(!e.target.dataset.wf) return; const id = e.target.dataset.wf.split(":")[1], it = (cur().sessions || []).find(x => x.id === id); if(it) saveWorkInputs(e.target.closest(".pcard"), it); });
 // 作業開始・終了の報告文を作る（連絡先に貼り付けて使う）
 function workReport(it, kind){
   const p = cur(), who = it.who || db.me || "", now = Date.now(), s = it.steps || {};
