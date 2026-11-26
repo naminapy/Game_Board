@@ -151,3 +151,8 @@ body[data-tab=gantt] :is(#chips,#tools,#board),body[data-tab=stats] :is(#chips,#
 /* 画面がせまいときは、タブを2段に折り返して全部見えるようにする */
 @media (max-width:520px){.tabs{flex-wrap:wrap}.tabs button{flex:1 1 30%}}
 #pSw{flex-wrap:wrap}
+/* 作業の流れ（GitHub Desktop のやることリスト） */
+.wstep{display:flex;gap:8px;align-items:flex-start;padding:8px 6px;border-top:1px dashed var(--bd)}
+.wstep>button:first-child{flex:none;font-size:18px;line-height:1;padding:4px 8px}
+.wstep.ok b{opacity:.65}
+.wstep.next{background:color-mix(in srgb,var(--ac) 12%,transparent);border-radius:10px}

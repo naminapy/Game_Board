@@ -1,5 +1,5 @@
 // ===== 設定値：ここを変えれば人数上限や選択肢を変更できるよ =====
-const APP_VERSION = "2026-11-25e"; // 更新のたびに変える目印（古い画面に「更新する」を出すために使う）
+const APP_VERSION = "2026-11-26a"; // 更新のたびに変える目印（古い画面に「更新する」を出すために使う）
 const MAX_MEMBERS = 15;
 const SIZE_WARN = 700 * 1024, SIZE_MAX = 1000 * 1024; // データの大きさの目安（GitHubで同期できるのは約1MBまで）
 const DUE_DAYS = 3; // 期限が「近い」とみなす日数（変えたい時はここの数字を書き換える）
@@ -107,7 +107,7 @@ function log(text){
 }
 // ===== 元に戻す（タスク・日記・予定の変更を、最大20回さかのぼれる） =====
 // 変更前の中身を、1件ずつ文字にして覚えておく。メンバーや目標などの変更は対象外
-const UNDO_KINDS = [["tasks","タスク"],["diary","日記"],["events","予定"],["assets","素材"],["tests","プレイテスト"],["versions","バージョン"]];
+const UNDO_KINDS = [["tasks","タスク"],["diary","日記"],["events","予定"],["assets","素材"],["tests","プレイテスト"],["versions","バージョン"],["sessions","作業"]];
 let undoStack = [], lastSnap = {};
 const snapProject = p => { const o = {}; UNDO_KINDS.forEach(([k]) => { o[k] = {}; (p[k] || []).forEach(i => o[k][i.id] = JSON.stringify(i)); }); return o; };
 const snapAll = () => { lastSnap = {}; db.projects.forEach(p => lastSnap[p.id] = snapProject(p)); }; // 読み込み・同期のあとに、今の状態を「基準」にし直す
@@ -466,7 +466,7 @@ function renderSize(){
 $("sizeBox").onclick = e => { if(e.target.id === "sizeBk") saveBackupFile(); };
 // ゴミ箱の自動削除：削除から30日たったタスクを、データから完全に消す
 const TRASH_DAYS = 30;
-function purgeTrash(){ const lim = Date.now() - TRASH_DAYS * 864e5; db.projects.forEach(p => { p.tasks = p.tasks.filter(t => !(t.deleted && (t.updatedAt || 0) < lim)); p.diary = (p.diary || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim)); p.events = (p.events || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim)); ["assets","tests","versions"].forEach(k => p[k] = (p[k] || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim))); }); }
+function purgeTrash(){ const lim = Date.now() - TRASH_DAYS * 864e5; db.projects.forEach(p => { p.tasks = p.tasks.filter(t => !(t.deleted && (t.updatedAt || 0) < lim)); p.diary = (p.diary || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim)); p.events = (p.events || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim)); ["assets","tests","versions","sessions"].forEach(k => p[k] = (p[k] || []).filter(d => !(d.deleted && (d.updatedAt || 0) < lim))); }); }
 // トークンの期限まで何日か（メモが無ければ null）
 const expDays = () => { const c = syncCfg(); return c.exp ? Math.ceil((new Date(c.exp + "T23:59:59") - new Date()) / 864e5) : null; };
 // ヘッダーの同期バッジ（状態：busy=同期中 / ok=同期済み / wait=同期待ち / warn=期限が近い / err=失敗）
@@ -503,7 +503,7 @@ function mergeDb(a, b, conf, since){ // a=この端末、b=クラウド、conf=�
   out.projects.forEach(p => {
     p.members = p.members.filter(m => !gone[m.id]); p.milestones = (p.milestones || []).filter(m => !gone[m.id]);
     const o = older.projects.find(x => x.id === p.id); if(!o) return;
-    p.tasks = byTime(p.tasks, o.tasks, (w, l) => conf && conf.push({pid:p.id, id:w.id, title:w.title, lose:copy(l), diff:CONF_FIELDS.filter(([k]) => JSON.stringify(w[k] ?? "") !== JSON.stringify(l[k] ?? "")).map(f => f[0])})); p.diary = byTime(p.diary || [], o.diary || []); p.events = byTime(p.events || [], o.events || []); ["assets","tests","versions"].forEach(k => p[k] = byTime(p[k] || [], o[k] || [])); // 制作管理の3つも1件ずつ // タスクと日記は1件ずつ // タスクは1件ずつ、メンバーと目標は両方を合わせる
+    p.tasks = byTime(p.tasks, o.tasks, (w, l) => conf && conf.push({pid:p.id, id:w.id, title:w.title, lose:copy(l), diff:CONF_FIELDS.filter(([k]) => JSON.stringify(w[k] ?? "") !== JSON.stringify(l[k] ?? "")).map(f => f[0])})); p.diary = byTime(p.diary || [], o.diary || []); p.events = byTime(p.events || [], o.events || []); ["assets","tests","versions","sessions"].forEach(k => p[k] = byTime(p[k] || [], o[k] || [])); // 制作管理の3つも1件ずつ // タスクと日記は1件ずつ // タスクは1件ずつ、メンバーと目標は両方を合わせる
     p.members = union(o.members, p.members); p.milestones = union(o.milestones || [], p.milestones || []);
     const seen = new Set(); // 更新フィードは両方を合わせて、重複を消して新しい順に100件
     p.feed = [...p.feed, ...o.feed].filter(f => { const k = f.t + f.who + f.text; return seen.has(k) ? false : seen.add(k); }).sort((x, y) => y.t - x.t).slice(0, 100);
@@ -899,7 +899,17 @@ function celebrate(){
 // 項目の型：text=1行 / area=複数行 / date=日付 / sel=選択 / url=リンク(https://のみ) / who=担当者(チームのみ)
 const ASSET_ST = [["none","未依頼"],["ask","依頼中"],["got","納品済"],["in","組み込み済"]];
 const ASSET_KIND = [["art","🎨 絵"],["sound","🔊 音・BGM"],["model","🧊 モデル"],["ui","🖼 UI"],["other","📦 その他"]];
+const WSTEPS = [ // GitHub Desktop で作業するときの流れ（上から順に）
+  ["fetch","🔄","フェッチ","GitHub Desktop の上にある「Fetch origin」を押す。「Pull origin」に変わったら、それも押して最新にする。"],
+  ["start","📣","作業開始の報告","「報告文をコピー」を押して、連絡先（Discordなど）に貼って送る。"],
+  ["commit","💾","コミット","変更したファイルを確認 → 左下の Summary に内容を書く → 「Commit to ブランチ名」を押す。"],
+  ["pr","🔀","プルリクエスト","「Push origin」→「Create Pull Request」を押して、開いたGitHubのページで作成する。できたページのリンクは「編集」に貼っておく。"],
+  ["end","✅","作業終了の報告","「報告文をコピー」を押して、終了の報告を送る。これで今回の作業は完了。"]
+];
 const PK = {
+  sessions:{label:"作業", tab:"作業の流れ", add:"作業を始める", fields:[["goal","今日やること","text","例：ジャンプの挙動を直す"],["branch","ブランチ名（GitHub Desktop の Current Branch）","text","例：feature/jump"],["commitMsg","コミットのメッセージ（Summary）","text"],["prUrl","プルリクのリンク（https://）","url"],["summary","やったこと（終了の報告に入る）","area"]],
+    init:() => { const last = (cur().sessions || []).filter(i => !i.deleted).sort((a, b) => b.date.localeCompare(a.date) || (b.updatedAt || 0) - (a.updatedAt || 0))[0]; return {date:ymd(new Date()), who:db.me || "", branch:last ? last.branch || "" : "", steps:{}}; },
+    title:i => i.goal || i.branch || "作業", check:i => (i.goal || i.branch) ? "" : "「今日やること」かブランチ名を入れてね"},
   assets:{label:"素材", fields:[["name","名前","text","例：スライムの歩きアニメ"],["kind","種類","sel",ASSET_KIND],["status","状態","sel",ASSET_ST],["who","担当（作る人）","who"],["link","ファイルのリンク（任意・https://）","url"],["memo","メモ","area"]],
     init:() => ({kind:"art", status:"none"}), title:i => i.name, check:i => i.name ? "" : "名前を入力してね"},
   tests:{label:"プレイテスト", fields:[["date","遊んだ日","date"],["who","遊んでくれた人","text"],["notes","感想・気づいたこと","area"],["fixes","直すこと（1行に1つ。あとでタスクにできる）","area"]],
@@ -907,15 +917,24 @@ const PK = {
   versions:{label:"バージョン", fields:[["name","バージョン名","text","例：α版 v0.1"],["date","日付","date"],["notes","変更点（1行に1つ）","area"],["link","ビルドのリンク（任意・https://）","url"]],
     init:() => ({date:ymd(new Date())}), title:i => i.name, check:i => i.name ? "" : "バージョン名を入力してね"}
 };
-let pk = get("gtm-pk") in PK ? get("gtm-pk") : "assets", editingP = null;
+let pk = get("gtm-pk") in PK ? get("gtm-pk") : "sessions", editingP = null;
 const pItems = k => (cur()[k] || []).filter(i => !i.deleted);
 function renderProd(){
   const p = cur(), solo = p.mode === "solo", K = PK[pk];
-  $("pSw").innerHTML = Object.entries(PK).map(([k, v]) => `<button class="chip${k === pk ? " on" : ""}" data-pk="${k}">${v.label}（${pItems(k).length}）</button>`).join("");
-  $("pAdd").textContent = `＋ ${K.label}を追加`;
+  $("pSw").innerHTML = Object.entries(PK).map(([k, v]) => `<button class="chip${k === pk ? " on" : ""}" data-pk="${k}">${v.tab || v.label}（${pItems(k).length}）</button>`).join("");
+  $("pAdd").textContent = `＋ ${K.add || K.label + "を追加"}`;
   const items = pItems(pk), who = i => !solo && p.members.some(m => m.id === i.who) ? dot(p, i.who) : "", link = i => /^https:\/\//i.test(i.link || "") ? `<a class="tag" href="${esc(i.link)}" target="_blank" rel="noopener">🔗 リンク</a>` : "";
   let html = "";
-  if(pk === "assets"){
+  if(pk === "sessions"){
+    const open = items.filter(i => !(i.steps || {}).end), closed = items.filter(i => (i.steps || {}).end);
+    const tm = ts => new Date(ts).toLocaleString("ja-JP", {month:"numeric", day:"numeric", hour:"2-digit", minute:"2-digit"});
+    $("pSum").textContent = open.length ? "" : "いまの作業はないよ。「作業を始める」から、フェッチ→報告→コミット→プルリク→終了報告の流れを進められる。";
+    html = open.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).map(i => {
+      const s = i.steps || {}, done = WSTEPS.filter(w => s[w[0]]).length, nextKey = (WSTEPS.find(w => !s[w[0]]) || [])[0];
+      return `<div class="pcard" data-pid="${i.id}"><div class="row"><b style="flex:1">${esc(i.goal || "（今日やることなし）")}</b><button data-pid="${i.id}">編集</button></div><div class="meta">${i.branch ? `<span class="tag">🌿 ${esc(i.branch)}</span>` : ""}<span class="tag">${done}/${WSTEPS.length} 完了</span>${who(i)}</div>` +
+        WSTEPS.map(([k, ic, lb, hint]) => `<div class="wstep${s[k] ? " ok" : ""}${k === nextKey ? " next" : ""}"><button data-wstep="${i.id}:${k}" aria-pressed="${!!s[k]}" aria-label="${lb}を${s[k] ? "未完了に戻す" : "完了にする"}">${s[k] ? "☑" : "☐"}</button><div style="flex:1;min-width:0"><b>${ic} ${lb}</b>${s[k] ? ` <span class="sub">${tm(s[k])}</span>` : k === nextKey ? ` <span class="tag">← 次はここ</span>` : ""}${(k === "start" || k === "end") ? ` <button data-wcopy="${i.id}:${k}">報告文をコピー</button>` : ""}<div class="sub">${esc(k === "commit" && i.commitMsg ? "メッセージ：" + i.commitMsg : hint)}</div>${k === "pr" && /^https:\/\//i.test(i.prUrl || "") ? `<a class="tag" href="${esc(i.prUrl)}" target="_blank" rel="noopener">🔗 プルリクを開く</a>` : ""}</div></div>`).join("") + `</div>`;
+    }).join("") + (closed.length ? `<h4 style="margin:14px 0 4px">終わった作業（${closed.length}件）</h4>` + closed.slice().sort((a, b) => b.steps.end - a.steps.end).slice(0, 30).map(i => `<div class="pcard" data-pid="${i.id}" tabindex="0" role="button" aria-label="${esc(PK.sessions.title(i))}を編集"><b>${esc(i.goal || i.branch || "作業")}</b> <span class="sub">${esc(i.date)}</span><div class="meta">${i.branch ? `<span class="tag">🌿 ${esc(i.branch)}</span>` : ""}${who(i)}${/^https:\/\//i.test(i.prUrl || "") ? `<a class="tag" href="${esc(i.prUrl)}" target="_blank" rel="noopener">🔗 プルリク</a>` : ""}<button data-wcopy="${i.id}:end">終了の報告文をコピー</button><button data-wreopen="${i.id}">作業に戻す</button></div></div>`).join("") : "");
+  } else if(pk === "assets"){
     const n = s => items.filter(i => i.status === s).length;
     $("pSum").textContent = items.length ? `組み込み済 ${n("in")}/${items.length}件（` + ASSET_ST.map(([s, l]) => `${l} ${n(s)}`).join(" ・ ") + "）" : "";
     html = items.slice().sort((a, b) => ASSET_ST.findIndex(s => s[0] === a.status) - ASSET_ST.findIndex(s => s[0] === b.status) || a.name.localeCompare(b.name, "ja")).map(i => {
@@ -935,7 +954,7 @@ function renderProd(){
       return `<div class="pcard" data-pid="${i.id}" tabindex="0" role="button" aria-label="${esc(i.name)}を編集"><b>${esc(i.name)}</b> <span class="sub">${esc(i.date)}</span> ${link(i)}${ls.length ? `<ul>${ls.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}</div>`;
     }).join("");
   }
-  $("pList").innerHTML = html || `<p class="sub">まだないよ。「＋ ${K.label}を追加」から作ろう。</p>`;
+  $("pList").innerHTML = html || `<p class="sub">まだないよ。「＋ ${K.add || K.label + "を追加"}」から始めよう。</p>`;
 }
 function openProd(id){
   const K = PK[pk], p = cur(), solo = p.mode === "solo";
@@ -971,10 +990,37 @@ $("pList").onclick = e => {
   const p = cur(), nx = e.target.closest("[data-pnext]"), tk = e.target.closest("[data-ptask]");
   if(nx){ const it = p.assets.find(x => x.id === nx.dataset.pnext), i = ASSET_ST.findIndex(s => s[0] === it.status); if(!ASSET_ST[i + 1]) return; it.status = ASSET_ST[i + 1][0]; it.updatedAt = Date.now(); it.updatedBy = db.me || ""; return commit(`素材「${it.name}」を ${ASSET_ST[i + 1][1]} にした`); }
   if(tk) return testToTasks(p.tests.find(x => x.id === tk.dataset.ptask));
+  const st = e.target.closest("[data-wstep]"), cp = e.target.closest("[data-wcopy]"), ro = e.target.closest("[data-wreopen]");
+  if(st){ const [id, k] = st.dataset.wstep.split(":"), it = (p.sessions || []).find(x => x.id === id); if(!it) return; it.steps = it.steps || {}; const on = !it.steps[k]; it.steps[k] = on ? Date.now() : 0; it.updatedAt = Date.now(); it.updatedBy = db.me || ""; return commit(`作業「${PK.sessions.title(it)}」：${WSTEPS.find(w => w[0] === k)[2]}を${on ? "完了" : "取り消し"}`); }
+  if(ro){ const it = (p.sessions || []).find(x => x.id === ro.dataset.wreopen); if(!it) return; it.steps.end = 0; it.updatedAt = Date.now(); it.updatedBy = db.me || ""; return commit(`作業「${PK.sessions.title(it)}」を作業中に戻した`); }
+  if(cp){ const [id, k] = cp.dataset.wcopy.split(":"), it = (p.sessions || []).find(x => x.id === id); if(it) copyText(workReport(it, k), cp); return; }
   if(e.target.closest("a")) return; // リンクを押したときは編集画面を開かない
   const c = e.target.closest("[data-pid]"); if(c) openProd(c.dataset.pid);
 };
 $("pList").onkeydown = e => { const c = e.target.closest("[data-pid]"); if(e.key === "Enter" && c && e.target === c){ e.preventDefault(); openProd(c.dataset.pid); } };
+// 作業開始・終了の報告文を作る（連絡先に貼り付けて使う）
+function workReport(it, kind){
+  const p = cur(), who = it.who || db.me || "", now = Date.now(), s = it.steps || {};
+  const t = ts => new Date(ts).toLocaleString("ja-JP", {month:"numeric", day:"numeric", hour:"2-digit", minute:"2-digit"});
+  const L = [`【作業${kind === "start" ? "開始" : "終了"}】${p.name}`];
+  if(who) L.push(`担当：${who}`);
+  if(it.branch) L.push(`ブランチ：${it.branch}`);
+  if(kind === "start"){ L.push(`日時：${t(now)}`); if(it.goal) L.push(`やること：${it.goal}`); }
+  else {
+    const end = s.end || now, from = s.start || s.fetch || 0; L.push(`日時：${t(end)}`);
+    if(from && end > from){ const m = Math.max(1, Math.round((end - from) / 60000)); L.push(`作業時間：約${m >= 60 ? Math.floor(m / 60) + "時間" : ""}${m % 60 ? m % 60 + "分" : ""}`); }
+    if(it.summary || it.goal) L.push(`やったこと：${it.summary || it.goal}`);
+    if(it.commitMsg) L.push(`コミット：${it.commitMsg}`);
+    if(it.prUrl) L.push(`プルリク：${it.prUrl}`);
+  }
+  return L.join("\n");
+}
+// 文章をクリップボードにコピーする（使えない環境では、古い方法で試す）
+function copyText(text, btn){
+  const done = ok => { const old = btn.textContent; btn.textContent = ok ? "コピーしたよ ✓" : "コピーできなかった"; setTimeout(() => { btn.textContent = old; }, 1800); };
+  const old = () => { try { const ta = document.createElement("textarea"); ta.value = text; ta.style.cssText = "position:fixed;opacity:0"; document.body.appendChild(ta); ta.select(); const ok = document.execCommand("copy"); ta.remove(); done(ok); } catch(e) { done(false); } };
+  navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(text).then(() => done(true), old) : old();
+}
 // プレイテストの「直すこと」を、1行ずつタスクにする
 function testToTasks(it){
   const p = cur(), lines = (it.fixes || "").split("\n").map(s => s.trim()).filter(Boolean); if(!it || !lines.length || it.tasked) return;
